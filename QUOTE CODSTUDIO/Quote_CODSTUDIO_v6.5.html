@@ -1,0 +1,2214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>CODSTUDIO — Quotation Builder v6.5</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#F8F4EF;font-family:'Quicksand','Helvetica Neue',sans-serif;}
+input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+input[type="number"]{-moz-appearance:textfield;}
+input:focus,textarea:focus,select:focus{outline:2px solid #C2A46E;outline-offset:-1px;}
+canvas{touch-action:none;}
+@media print{
+  .no-print{display:none!important;}
+  body{background:#fff;}
+  .print-page{page-break-after:always;}
+}
+::-webkit-scrollbar{width:6px;}
+::-webkit-scrollbar-track{background:#F8F4EF;}
+::-webkit-scrollbar-thumb{background:#E0D8CE;border-radius:3px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useMemo,useRef,useEffect,useCallback}=React;
+
+// ── PALETTE ──────────────────────────────────────────────────────────────────
+const C={ink:"#2A1F14",gold:"#C2A46E",goldPale:"#E8D9C0",cream:"#F8F4EF",creamD:"#EFE9E0",creamW:"#FAF7F2",terra:"#C27B5A",terraPale:"#F0D9CC",sage:"#7A8C7E",stone:"#8A7E72",white:"#FFFFFF",border:"#E0D8CE",success:"#3A6E4A",danger:"#8B3A3A"};
+const T={serif:"'Cormorant Garamond',Georgia,serif",sans:"'Quicksand','Helvetica Neue',sans-serif"};
+const fmt=n=>`$${Number(n).toLocaleString("en-SG",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const todayStr=()=>new Date().toLocaleDateString("en-SG",{day:"2-digit",month:"long",year:"numeric"});
+const genRef=()=>{const now=new Date();const yy=String(now.getFullYear()).slice(2);const mm=String(now.getMonth()+1).padStart(2,"0");const k=`cods_ref_${yy}${mm}`;const n=parseInt(localStorage.getItem(k)||"0")+1;localStorage.setItem(k,n);return`ii-${yy}${mm}${String(n).padStart(3,"0")}`;};
+
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+const ZONE_ORDER=["Entrance/Foyer","Living/Dining","Kitchen/Yard","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Balcony Main","Balcony 2","Whole House"];
+const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
+const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier",sub:"Non-GST",gst:false}];
+const PAY_PRESETS={standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
+const ROLES={staff:1,senior:2,director:3};
+const USER_ROLE=ROLES.director;
+const DIRECTOR_PIN="ikigai2026";
+const WARRANTY=[{item:"Waterproofing membrane (shower area, 300–1800mm upturn)",years:"3 Years"},{item:"Carpentry & woodworks – workmanship, laminate & countertop integrity",years:"5 Years"},{item:"Aluminium works",years:"3 Years (supplier warranty)"},{item:"Vinyl flooring",years:"Up to 10 Years (supplier warranty)"},{item:"Plumbing stainless steel pipes",years:"5 Years"},{item:"Floor & wall tiles – against popping and expansion",years:"5 Years"},{item:"Electrical wiring connection and wire integrity",years:"5 Years"}];
+const TC=["The quoted amount is nett in Singapore dollars. It excludes all fittings and accessories unless otherwise specified.","The amount quoted is estimated based on floor plan dimensions. It is subject to adjustments after actual site measurements.","All designs, details, measurements and specifications are subject to modifications according to the site structure and condition.","Upon acceptance by the Client, this document will form the contract between both parties. It also acts as a Proforma Invoice for payment.","Signed agreement must commence within 6 months from the date of this agreement and no cancellation is permitted.","Any additional work/items agreed after the contract will be treated as variation orders (VO) and charged accordingly & separately.","The delivery will be planned around the agreed work schedule with Client. On completion, a joint inspection shall be conducted.","FOC items, discounts and/or refunds must be stated in writing and authorised by the Company. Verbal agreements will not be recognised.","The Client is advised to take care of their valuable items. The Company will not be responsible for any loss of valuables during the renovation period.","For every payment made by the Client, an official receipt will be issued.","We are entitled the right to suspend or stop work in the event the Client fails to pay the contract sum due.","All payments for variation orders must be fully paid before work commencement."];
+const MQ=["We provide quality materials according to the specification, design and/or layout drawing(s) confirmed by the Client.","All materials used will be delivered in new condition.","All carpentry works come in solid plywood and ABS trimmed on door edge.","All cabinet internal finish will be White PVC (unless stated) and full-height cabinet will be up to 8ft (2.44m) only.","All cabinet swing doors are equipped with soft closing device, and drawers will come with heavy-duty runners.","Tile laying will be in accordance to agreed plan and we include edging in PVC to joint the edges.","All natural materials (marble, granite, stone, timber etc.) offer no absolute uniformity in grains, colours/tone consistency and texture."];
+const STATUS_COL={Draft:C.stone,Sent:C.terra,Signed:C.success};
+const FINISH={premium:{label:"Premium",mult:1.15},luxury:{label:"Luxury",mult:1.30}};
+const STORAGE_KEY="cods_versions";
+const RATECARD_KEY="cods_ratecard_overrides";
+const DESIGN_PSF_RATE=5;
+
+// ── RATE CARD ─────────────────────────────────────────────────────────────────
+const DEFAULT_TRADES=[
+  {id:1,code:"01",name:"Design",subheader:"Private Residential Design Fees",noZone:true,items:[
+    {id:"1.1",desc:"Design consultation & services",unit:"LS",price:750},
+    {id:"1.2",desc:"Spatial planning & layout in 2D (furniture, RCP, lighting plan)",unit:"LS",price:1250},
+    {id:"1.3",desc:"3D design rendering & perspective drawing (3 revisions)",unit:"LS",price:1500},
+    {id:"1.4",desc:"Elevation drawings – carpentry",unit:"LS",price:1500},
+    {id:"1.5",desc:"Styling of interior – 2-day service",unit:"LS",price:380},
+    {id:"1.6",desc:"Japandi Style Theme – with ornaments",unit:"LS",price:500,addon:true},
+    {id:"1.7",desc:"Japandi + Luxury Style Theme – with ornaments",unit:"LS",price:1000,addon:true},
+  ]},
+  {id:2,code:"02",name:"Pre & Post Renovation",noZone:true,items:[
+    {id:"2.1",desc:"Hacking permit application (Condo)",unit:"LS",price:200},
+    {id:"2.2",desc:"PE endorsement (subject to authority requirements)",unit:"LS",price:600},
+    {id:"2.3",desc:"Project management & site supervision with project dashboard",unit:"LS",price:2000},
+    {id:"2.4",desc:"Floor protection – corrugated paper",unit:"LS",price:323},
+    {id:"2.5",desc:"Final clean upon completion",unit:"Trip",price:303},
+    {id:"2.6",desc:"General clean – extra trip",unit:"Trip",price:193,addon:true},
+    {id:"2.7",desc:"Detail cleaning – with styling package",unit:"Trip",price:0,addon:true},
+  ]},
+  {id:3,code:"03",name:"Demolition",note:"Supply labour & tools; proper disposal off-site",items:[
+    {id:"3.1",desc:"Concrete walls up to 9ft height – internal",unit:"ft run",price:55,zone:"Whole House"},
+    {id:"3.2",desc:"Partition walls up to 9ft height – internal",unit:"ft run",price:35,zone:"Whole House"},
+    {id:"3.3",desc:"Partition ceiling up to 9ft",unit:"sqft",price:2,zone:"Whole House"},
+    {id:"3.4",desc:"Timber ceiling up to 9ft",unit:"sqft",price:3,zone:"Whole House"},
+    {id:"3.5",desc:"Wooden fixed cabinet (below 9ft H × <8ft L)",unit:"Unit",price:287,zone:"Whole House"},
+    {id:"3.6",desc:"Wooden loose-item cabinet (below 9ft H × <8ft L)",unit:"Unit",price:287,zone:"Whole House"},
+    {id:"3.7",desc:"Metal fixed-item cabinet (below 9ft H × <8ft L)",unit:"Unit",price:287,zone:"Whole House"},
+    {id:"3.8",desc:"Floor tiles & skirting – Living/Dining",unit:"Lot",price:1431,zone:"Living/Dining"},
+    {id:"3.9",desc:"Floor tiles & skirting – per bedroom",unit:"Lot",price:545,zone:"Master Bedroom"},
+    {id:"3.10",desc:"Floor covering – Timber/Parquet",unit:"Lot",price:545,zone:"Master Bedroom"},
+    {id:"3.11",desc:"Floor covering – Vinyl/Carpet",unit:"Lot",price:545,zone:"Master Bedroom"},
+    {id:"3.12",desc:"Kitchen floor & wall tiles",unit:"Lot",price:1976,zone:"Kitchen/Yard"},
+    {id:"3.13",desc:"Concrete sink and stove support",unit:"Lot",price:491,zone:"Kitchen/Yard"},
+    {id:"3.14",desc:"Toilet floor & wall tiles",unit:"Lot",price:954,zone:"Master Toilet"},
+    {id:"3.15",desc:"Toilet floor & wall tiles",unit:"Lot",price:954,zone:"Toilet 2"},
+    {id:"3.16",desc:"Bathtub removal",unit:"Lot",price:193,zone:"Master Toilet"},
+    {id:"3.17",desc:"Removal of marble or granite (additional labour)",unit:"sqft",price:3,zone:"Whole House",addon:true},
+    {id:"3.18",desc:"Door frame – Timber/Metal",unit:"Lot",price:137,zone:"Whole House"},
+    {id:"3.19",desc:"Door – Timber/Metal",unit:"Lot",price:137,zone:"Whole House"},
+    {id:"3.20",desc:"Window + grilles",unit:"Lot",price:273,zone:"Whole House"},
+  ]},
+  {id:4,code:"04",name:"Electrical",note:"Supply labour; surfaced wiring with PVC casing; ceiling <3m; Honeywell white faceplates included; light fittings excluded.",items:[
+    {id:"4.1",desc:"Lighting point – lay wire (hanging/T5/wall light/ceiling fan)",unit:"no.",price:103,zone:"Entrance/Foyer"},
+    {id:"4.2",desc:"Installation of lighting / T5 / wall light",unit:"no.",price:14,zone:"Entrance/Foyer"},
+    {id:"4.3",desc:"Installation of hanging light (normal)",unit:"no.",price:62,zone:"Entrance/Foyer"},
+    {id:"4.4",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Entrance/Foyer"},
+    {id:"4.5",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Entrance/Foyer"},
+    {id:"4.6",desc:"Supply door bell",unit:"no.",price:48,zone:"Entrance/Foyer"},
+    {id:"4.7",desc:"Door bell point – lay wire",unit:"no.",price:96,zone:"Entrance/Foyer"},
+    {id:"4.8",desc:"Installation of door bell",unit:"no.",price:14,zone:"Entrance/Foyer"},
+    {id:"4.9",desc:"Lighting point – lay wire (hanging/track/T5/wall/ceiling fan)",unit:"no.",price:103,zone:"Living/Dining"},
+    {id:"4.10",desc:"Installation of lighting / T5 / wall light",unit:"no.",price:14,zone:"Living/Dining"},
+    {id:"4.11",desc:"Installation of track light",unit:"no.",price:28,zone:"Living/Dining"},
+    {id:"4.12",desc:"Installation of hanging light (normal)",unit:"no.",price:62,zone:"Living/Dining"},
+    {id:"4.13",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Living/Dining"},
+    {id:"4.14",desc:"Installation of clothes hanger",unit:"no.",price:123,zone:"Living/Dining"},
+    {id:"4.15",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Living/Dining"},
+    {id:"4.16",desc:"LED RGB light point – lay wire & install",unit:"no.",price:178,zone:"Living/Dining"},
+    {id:"4.17",desc:"Dimmer switch – Honeywell (white)",unit:"no.",price:129,zone:"Living/Dining"},
+    {id:"4.18",desc:"2-way switch point",unit:"no.",price:164,zone:"Living/Dining"},
+    {id:"4.19",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Living/Dining"},
+    {id:"4.20",desc:"13A × 2 power point",unit:"no.",price:109,zone:"Living/Dining"},
+    {id:"4.21",desc:"Data point – Cat6",unit:"no.",price:191,zone:"Living/Dining"},
+    {id:"4.22",desc:"Data point – Cat6 A",unit:"no.",price:300,zone:"Living/Dining"},
+    {id:"4.23",desc:"Speaker point",unit:"no.",price:123,zone:"Living/Dining"},
+    {id:"4.24",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Living/Dining"},
+    {id:"4.25",desc:"Cover power wiring",unit:"no.",price:95,zone:"Living/Dining"},
+    {id:"4.26",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Kitchen/Yard"},
+    {id:"4.27",desc:"Installation of lighting / T5 / wall light",unit:"no.",price:14,zone:"Kitchen/Yard"},
+    {id:"4.28",desc:"Cooker hood point – lay wire (below 10A)",unit:"no.",price:122,zone:"Kitchen/Yard"},
+    {id:"4.29",desc:"Cooker hob point – lay wire (13A × 1)",unit:"no.",price:95,zone:"Kitchen/Yard"},
+    {id:"4.30",desc:"Microwave / oven / induction point (15A–20A)",unit:"no.",price:176,zone:"Kitchen/Yard"},
+    {id:"4.31",desc:"13A × 1 waterproof power point",unit:"no.",price:218,zone:"Kitchen/Yard"},
+    {id:"4.32",desc:"13A × 1 waterproof cover – white/transparent",unit:"no.",price:38,zone:"Kitchen/Yard"},
+    {id:"4.33",desc:"13A × 2 waterproof cover – white/transparent",unit:"no.",price:45,zone:"Kitchen/Yard"},
+    {id:"4.34",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Kitchen/Yard"},
+    {id:"4.35",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Kitchen/Yard"},
+    {id:"4.36",desc:"Wall fan point (13A × 1 power point)",unit:"no.",price:96,zone:"Kitchen/Yard"},
+    {id:"4.37",desc:"Installation of wall fan",unit:"no.",price:28,zone:"Kitchen/Yard"},
+    {id:"4.38",desc:"Lighting point – lay wire (ceiling fan/hanging/wall light)",unit:"no.",price:103,zone:"Master Bedroom"},
+    {id:"4.39",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Master Bedroom"},
+    {id:"4.40",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Master Bedroom"},
+    {id:"4.41",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Master Bedroom"},
+    {id:"4.42",desc:"LED RGB light point – lay wire & install",unit:"no.",price:178,zone:"Master Bedroom"},
+    {id:"4.43",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Master Bedroom"},
+    {id:"4.44",desc:"13A × 2 power point",unit:"no.",price:109,zone:"Master Bedroom"},
+    {id:"4.45",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Master Bedroom"},
+    {id:"4.46",desc:"Data point – Cat6",unit:"no.",price:191,zone:"Master Bedroom"},
+    {id:"4.47",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Master Bedroom"},
+    {id:"4.48",desc:"Cover power wiring",unit:"no.",price:95,zone:"Master Bedroom"},
+    {id:"4.49",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 2"},
+    {id:"4.50",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 2"},
+    {id:"4.51",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 2"},
+    {id:"4.52",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 2"},
+    {id:"4.53",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 2"},
+    {id:"4.54",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 2"},
+    {id:"4.55",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 2"},
+    {id:"4.56",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 3"},
+    {id:"4.57",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 3"},
+    {id:"4.58",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 3"},
+    {id:"4.59",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 3"},
+    {id:"4.60",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 3"},
+    {id:"4.61",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 3"},
+    {id:"4.62",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 3"},
+    {id:"4.63b",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 4"},
+    {id:"4.64b",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 4"},
+    {id:"4.65b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 4"},
+    {id:"4.66b",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 4"},
+    {id:"4.67b",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 4"},
+    {id:"4.68b",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 4"},
+    {id:"4.69b",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 4"},
+    {id:"4.70b",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 5"},
+    {id:"4.71b",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 5"},
+    {id:"4.72b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 5"},
+    {id:"4.73b",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 5"},
+    {id:"4.74b",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 5"},
+    {id:"4.75b",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 5"},
+    {id:"4.76b",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 5"},
+    {id:"4.63",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Master Toilet"},
+    {id:"4.64",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Master Toilet"},
+    {id:"4.65",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Master Toilet"},
+    {id:"4.66",desc:"20A 2-way heater point – lay wire",unit:"no.",price:518,zone:"Master Toilet"},
+    {id:"4.67",desc:"Connection heater",unit:"no.",price:122,zone:"Master Toilet"},
+    {id:"4.68",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Master Toilet"},
+    {id:"4.69",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Master Toilet"},
+    {id:"4.70",desc:"Wall fan point (13A × 1 power point)",unit:"no.",price:96,zone:"Master Toilet"},
+    {id:"4.71",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Master Toilet"},
+    {id:"4.72",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Toilet 2"},
+    {id:"4.73",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Toilet 2"},
+    {id:"4.74",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Toilet 2"},
+    {id:"4.75",desc:"20A 2-way heater point – lay wire",unit:"no.",price:518,zone:"Toilet 2"},
+    {id:"4.76",desc:"Connection heater",unit:"no.",price:122,zone:"Toilet 2"},
+    {id:"4.77",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Toilet 2"},
+    {id:"4.78",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Toilet 2"},
+    {id:"4.79",desc:"Wall fan point (13A × 1 power point)",unit:"no.",price:96,zone:"Toilet 2"},
+    {id:"4.80",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Toilet 2"},
+    {id:"4.T3a",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Toilet 3"},
+    {id:"4.T3b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Toilet 3"},
+    {id:"4.T3c",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Toilet 3"},
+    {id:"4.T3d",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Toilet 3"},
+    {id:"4.T3e",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Toilet 3"},
+    {id:"4.T3f",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Toilet 3"},
+    {id:"4.T4a",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Toilet 4"},
+    {id:"4.T4b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Toilet 4"},
+    {id:"4.T4c",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Toilet 4"},
+    {id:"4.T4d",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Toilet 4"},
+    {id:"4.T4e",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Toilet 4"},
+    {id:"4.T4f",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Toilet 4"},
+    {id:"4.81",desc:"DB Board – 3-bedder",unit:"no.",price:473,zone:"Whole House"},
+    {id:"4.82",desc:"DB Board – 4 to 5-bedder",unit:"no.",price:540,zone:"Whole House"},
+    {id:"4.83",desc:"DB Board – Penthouse/Jumbo",unit:"no.",price:675,zone:"Whole House"},
+    {id:"4.84",desc:"20A SPN isolator",unit:"no.",price:338,zone:"Whole House"},
+    {id:"4.85",desc:"32A SPN isolator",unit:"no.",price:567,zone:"Whole House"},
+    {id:"4.86",desc:"Master switch control",unit:"no.",price:176,zone:"Whole House"},
+    {id:"4.87",desc:"Opennet connection",unit:"no.",price:513,zone:"Whole House"},
+    {id:"4.88",desc:"Labour – Opennet PVC conduit",unit:"no.",price:203,zone:"Whole House"},
+    {id:"4.89",desc:"Labour – wall hacking & concealment with patch back",unit:"M",price:50,zone:"Whole House"},
+    {id:"4.90",desc:"Telephone point – Cat6",unit:"no.",price:191,zone:"Whole House"},
+    {id:"4.91",desc:"Shifting of 1-gang switch",unit:"no.",price:75,zone:"Whole House"},
+    {id:"4.92",desc:"Shifting of 2-gang switch",unit:"no.",price:115,zone:"Whole House"},
+    {id:"4.93",desc:"Shifting of 3-gang switch",unit:"no.",price:162,zone:"Whole House"},
+    {id:"4.94",desc:"Shifting of 4-gang switch",unit:"no.",price:189,zone:"Whole House"},
+    {id:"4.95",desc:"Changing of switch & socket – Honeywell (white)",unit:"no.",price:21,zone:"Whole House"},
+    {id:"4.96",desc:"Changing of 15A heater switch – Honeywell (white)",unit:"no.",price:32,zone:"Whole House"},
+    {id:"4.97",desc:"Changing of 20A heater switch – Honeywell (white)",unit:"no.",price:32,zone:"Whole House"},
+    {id:"4.98",desc:"Changing of 20A 2-way heater switch – Honeywell (white)",unit:"no.",price:76,zone:"Whole House"},
+    {id:"4.99",desc:"Changing of data Cat6 socket – Honeywell (white)",unit:"no.",price:38,zone:"Whole House"},
+    {id:"4.100",desc:"Supply labour for concealed wiring works",unit:"LS",price:0,zone:"Whole House",addon:true},
+    {id:"4.101",desc:"Lutron automation scene control (per circuit ×5)",unit:"Qty",price:1350,zone:"Whole House",addon:true},
+  ]},
+  {id:5,code:"05",name:"Plumbing",note:"Supply labour only; concealed or exposed stainless steel piping c/w 5-year water leakage warranty.",items:[
+    {id:"5.WH1",desc:"Change incoming main supply pipe from outside of house",unit:"LS",price:0,zone:"Whole House"},
+    {id:"5.WH2",desc:"Replace pipe from main to toilet/kitchen valve",unit:"LS",price:0,zone:"Whole House"},
+    {id:"5.WH3",desc:"Replace stag pipe",unit:"LS",price:0,zone:"Whole House"},
+    {id:"5.WH4",desc:"Floor trap + pipe (general)",unit:"set",price:48,zone:"Whole House"},
+    {id:"5.1",desc:"Install kitchen concealed COLD pipe (sink, washing machine)",unit:"set",price:614,zone:"Kitchen/Yard"},
+    {id:"5.2",desc:"Kitchen add HOT pipe",unit:"no.",price:246,zone:"Kitchen/Yard"},
+    {id:"5.3",desc:"Kitchen sink + tap",unit:"no.",price:137,zone:"Kitchen/Yard"},
+    {id:"5.4",desc:"Washing machine outlet + tap",unit:"LS",price:69,zone:"Kitchen/Yard"},
+    {id:"5.5",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Kitchen/Yard"},
+    {id:"5.6",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Master Toilet"},
+    {id:"5.7",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Master Toilet"},
+    {id:"5.8",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Master Toilet"},
+    {id:"5.9",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Master Toilet"},
+    {id:"5.10",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Master Toilet"},
+    {id:"5.11",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Master Toilet"},
+    {id:"5.12",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Master Toilet"},
+    {id:"5.13",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Master Toilet"},
+    {id:"5.14",desc:"Toilet accessories",unit:"set",price:69,zone:"Master Toilet"},
+    {id:"5.15",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Master Toilet"},
+    {id:"5.16",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Toilet 2"},
+    {id:"5.17",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Toilet 2"},
+    {id:"5.18",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Toilet 2"},
+    {id:"5.19",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Toilet 2"},
+    {id:"5.20",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Toilet 2"},
+    {id:"5.21",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Toilet 2"},
+    {id:"5.22",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Toilet 2"},
+    {id:"5.23",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Toilet 2"},
+    {id:"5.24",desc:"Toilet accessories",unit:"set",price:69,zone:"Toilet 2"},
+    {id:"5.25",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Toilet 2"},
+    {id:"5.T3a",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Toilet 3"},
+    {id:"5.T3b",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Toilet 3"},
+    {id:"5.T3c",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Toilet 3"},
+    {id:"5.T3d",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Toilet 3"},
+    {id:"5.T3e",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Toilet 3"},
+    {id:"5.T3f",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Toilet 3"},
+    {id:"5.T3g",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Toilet 3"},
+    {id:"5.T3h",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Toilet 3"},
+    {id:"5.T3i",desc:"Toilet accessories",unit:"set",price:69,zone:"Toilet 3"},
+    {id:"5.T3j",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Toilet 3"},
+    {id:"5.T4a",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Toilet 4"},
+    {id:"5.T4b",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Toilet 4"},
+    {id:"5.T4c",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Toilet 4"},
+    {id:"5.T4d",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Toilet 4"},
+    {id:"5.T4e",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Toilet 4"},
+    {id:"5.T4f",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Toilet 4"},
+    {id:"5.T4g",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Toilet 4"},
+    {id:"5.T4h",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Toilet 4"},
+    {id:"5.T4i",desc:"Toilet accessories",unit:"set",price:69,zone:"Toilet 4"},
+    {id:"5.T4j",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Toilet 4"},
+  ]},
+  {id:6,code:"06",name:"Masonry",note:"Supply material & labour; based on 2,600mm ceiling height",items:[
+    {id:"6.1",desc:"Floor tiles & skirting — Living/General (60×60cm)",unit:"sqft",price:8,zone:"Living/Dining"},
+    {id:"6.2",desc:"Wall screeding repair to smooth finish",unit:"sqft",price:7,zone:"Living/Dining"},
+    {id:"6.3",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Master Bedroom"},
+    {id:"6.4",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 2"},
+    {id:"6.4b",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 3"},
+    {id:"6.4c",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 4"},
+    {id:"6.4d",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 5"},
+    {id:"6.5",desc:"Kitchen wall tiles — backsplash",unit:"sqft",price:9,zone:"Kitchen/Yard"},
+    {id:"6.6",desc:"Kitchen floor tiles — lay/screed",unit:"sqft",price:8,zone:"Kitchen/Yard"},
+    {id:"6.7",desc:"Kitchen floor level screed (70–100mm)",unit:"sqft",price:7,zone:"Kitchen/Yard"},
+    {id:"6.8",desc:"Kitchen waterproofing (DAVCO)",unit:"LS",price:499,zone:"Kitchen/Yard"},
+    {id:"6.9",desc:"Cabinet base (per ft run)",unit:"pfr",price:32,zone:"Kitchen/Yard"},
+    {id:"6.10",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Master Toilet"},
+    {id:"6.11",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Master Toilet"},
+    {id:"6.12",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Master Toilet"},
+    {id:"6.13",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Toilet 2"},
+    {id:"6.14",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Toilet 2"},
+    {id:"6.15",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Toilet 2"},
+    {id:"6.T3a",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Toilet 3"},
+    {id:"6.T3b",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Toilet 3"},
+    {id:"6.T3c",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Toilet 3"},
+    {id:"6.T4a",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Toilet 4"},
+    {id:"6.T4b",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Toilet 4"},
+    {id:"6.T4c",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Toilet 4"},
+    {id:"6.16",desc:"Install door frame",unit:"LS",price:212,zone:"Whole House"},
+    {id:"6.17",desc:"Wall erection — hollow block with screed",unit:"PFR",price:159,zone:"Whole House"},
+    {id:"6.17a",desc:"(+) Red-brick wall",unit:"PFR",price:0,zone:"Whole House",addon:true},
+    {id:"6.17b",desc:"(+) Hollow-brick wall",unit:"PFR",price:0,zone:"Whole House",addon:true},
+    {id:"6.17c",desc:"(+) Cement board (Calcium Silicate)",unit:"PFR",price:0,zone:"Whole House",addon:true},
+    {id:"6.18",desc:"Tile skirting 60–70mm H",unit:"PFR",price:3,zone:"Whole House"},
+    {id:"6.19",desc:"Large format tile surcharge (>60×60cm / wood plank / subway)",unit:"sqft",price:2,zone:"Whole House",addon:true},
+    {id:"6.20",desc:"Edging for tiles — aluminium profile",unit:"LS",price:69,zone:"Whole House",addon:true},
+    {id:"6.21",desc:"Cutting large format tiles",unit:"sqft",price:2,zone:"Whole House",addon:true},
+    {id:"6.22",desc:"Screed floor to smooth finish",unit:"sqft",price:6,zone:"Whole House",addon:true},
+    {id:"6.23",desc:"Install bathtub with tile border",unit:"LS",price:605,zone:"Master Toilet",addon:true},
+  ]},
+  {id:7,code:"07",name:"Flooring",items:[
+    {id:"7.1",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Living/Dining"},
+    {id:"7.2",desc:"Varnish existing parquet – clear matt melamine (<150 SF/zone)",unit:"Room",price:545,zone:"Living/Dining"},
+    {id:"7.3",desc:"Polish existing marble flooring with gum-filler",unit:"sqft",price:3,zone:"Living/Dining"},
+    {id:"7.4",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Master Bedroom"},
+    {id:"7.5",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 2"},
+    {id:"7.6",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 3"},
+    {id:"7.7",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 4"},
+    {id:"7.7b",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 5"},
+    {id:"7.8",desc:"Overlap existing skirting with 100mm H timber skirting",unit:"ft run",price:5.8,zone:"Whole House"},
+    {id:"7.9",desc:"Install MDF/Timber skirting H60mm",unit:"M",price:40,zone:"Whole House",addon:true},
+    {id:"7.10",desc:"Floor protection replacement after flooring",unit:"roll",price:82,zone:"Whole House",addon:true},
+  ]},
+  {id:8,code:"08",name:"Ceiling & Partition",note:"Supply & install drywall & ceiling",items:[
+    {id:"8.1",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Living/Dining"},
+    {id:"8.2",desc:"Construct light cove for LED strips",unit:"pfr",price:13,zone:"Living/Dining"},
+    {id:"8.3",desc:"Construct L-box (D300–450mm)",unit:"pfr",price:11,zone:"Living/Dining"},
+    {id:"8.4",desc:"Construct pelmet (H150mm)",unit:"pfr",price:10,zone:"Living/Dining"},
+    {id:"8.5",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Living/Dining"},
+    {id:"8.6",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Master Bedroom"},
+    {id:"8.7",desc:"Construct light cove for LED strips",unit:"pfr",price:13,zone:"Master Bedroom"},
+    {id:"8.8",desc:"Construct L-box (D300–450mm)",unit:"pfr",price:11,zone:"Master Bedroom"},
+    {id:"8.9",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Master Bedroom"},
+    {id:"8.10",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 2"},
+    {id:"8.11",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 2"},
+    {id:"8.12",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 3"},
+    {id:"8.13",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 3"},
+    {id:"8.13b",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 4"},
+    {id:"8.13c",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 4"},
+    {id:"8.13d",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 5"},
+    {id:"8.13e",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 5"},
+    {id:"8.14",desc:"Construct L-box (D300mm)",unit:"pfr",price:9,zone:"Kitchen/Yard"},
+    {id:"8.15",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Master Toilet"},
+    {id:"8.16",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Toilet 2"},
+    {id:"8.16b",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Toilet 3"},
+    {id:"8.16c",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Toilet 4"},
+    {id:"8.17",desc:"Install partition wall (1-sided)",unit:"sqft",price:4,zone:"Whole House"},
+    {id:"8.18",desc:"Install partition wall (2-sided)",unit:"sqft",price:5,zone:"Whole House"},
+    {id:"8.19",desc:"Install rockwool 40KG",unit:"sqft",price:1,zone:"Whole House"},
+    {id:"8.20",desc:"Install rockwool 60KG",unit:"sqft",price:1.6,zone:"Whole House"},
+    {id:"8.21",desc:"Install rockwool 80KG",unit:"sqft",price:2,zone:"Whole House"},
+  ]},
+  {id:9,code:"09",name:"Carpentry",note:"Solid plywood; high-pressure laminate; soft-close hinges; ABS trimmed edges.",items:[
+    {id:"9.1",desc:"Full-height shoe cabinet (<H2900/D300mm)",unit:"ft run",price:382,zone:"Entrance/Foyer",carpentry:true},
+    {id:"9.2",desc:"Settee cabinet cum storage (<H900/D600mm)",unit:"ft run",price:164,zone:"Entrance/Foyer",carpentry:true},
+    {id:"9.2a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Entrance/Foyer",addon:true},
+    {id:"9.2b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Entrance/Foyer",addon:true},
+    {id:"9.3",desc:"Drawer 60KG loading mechanism",unit:"set",price:164,zone:"Entrance/Foyer",addon:true},
+    {id:"9.4",desc:"Drawer 120KG loading mechanism",unit:"set",price:300,zone:"Entrance/Foyer",addon:true},
+    {id:"9.5",desc:"Drawer divider – wood per L60cm",unit:"set",price:69,zone:"Entrance/Foyer",addon:true},
+    {id:"9.6",desc:"Drawer divider – felt/fabric per L60cm",unit:"set",price:180,zone:"Entrance/Foyer",addon:true},
+    {id:"9.7",desc:"Drawer interior – felt/fabric per L60cm",unit:"set",price:120,zone:"Entrance/Foyer",addon:true},
+    {id:"9.8",desc:"Feature wall in laminate finish (<H2900)",unit:"sqft",price:35,zone:"Living/Dining",carpentry:true},
+    {id:"9.9",desc:"Suspended TV console c/w wooden door (<H500/D450mm) single tier",unit:"ft run",price:164,zone:"Living/Dining",carpentry:true},
+    {id:"9.10",desc:"Full-height cabinet cum casement storage/display (<H2900/D550mm)",unit:"ft run",price:518,zone:"Living/Dining",carpentry:true},
+    {id:"9.10a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Living/Dining",addon:true},
+    {id:"9.10b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Living/Dining",addon:true},
+    {id:"9.11",desc:"Drawer 60KG loading mechanism",unit:"set",price:164,zone:"Living/Dining",addon:true},
+    {id:"9.12",desc:"Drawer 120KG loading mechanism",unit:"set",price:300,zone:"Living/Dining",addon:true},
+    {id:"9.13",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Master Bedroom",carpentry:true},
+    {id:"9.14",desc:"Full-height casement wardrobe c/w hidden door",unit:"ft run",price:382,zone:"Master Bedroom",carpentry:true},
+    {id:"9.15",desc:"Full-height cabinet cum storage/display (<H2900/D600mm)",unit:"ft run",price:518,zone:"Master Bedroom",carpentry:true},
+    {id:"9.16",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Master Bedroom",carpentry:true},
+    {id:"9.17",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Master Bedroom",carpentry:true},
+    {id:"9.18",desc:"Bedside table (<H500/D500mm)",unit:"LS",price:491,zone:"Master Bedroom",carpentry:true},
+    {id:"9.18a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Master Bedroom",addon:true},
+    {id:"9.18b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Master Bedroom",addon:true},
+    {id:"9.19",desc:"Glass door c/w aluminium frame <H2800/W550mm",unit:"Pc",price:180,zone:"Master Bedroom",addon:true},
+    {id:"9.20",desc:"Glass door c/w aluminium frame <H1100/W550mm",unit:"Pc",price:100,zone:"Master Bedroom",addon:true},
+    {id:"9.21",desc:"Sliding-Hikido mechanism (<L6ft)",unit:"Set",price:682,zone:"Master Bedroom",addon:true},
+    {id:"9.22",desc:"Drawer 60KG loading mechanism",unit:"set",price:164,zone:"Master Bedroom",addon:true},
+    {id:"9.23",desc:"Drawer 120KG loading mechanism",unit:"set",price:300,zone:"Master Bedroom",addon:true},
+    {id:"9.24",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Bedroom 2",carpentry:true},
+    {id:"9.25",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Bedroom 2",carpentry:true},
+    {id:"9.26",desc:"Top-hung book cabinet (<H1200/D500mm)",unit:"ft run",price:164,zone:"Bedroom 2",carpentry:true},
+    {id:"9.27",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 2",carpentry:true},
+    {id:"9.27a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 2",addon:true},
+    {id:"9.27b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Bedroom 2",addon:true},
+    {id:"9.28",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Bedroom 3",carpentry:true},
+    {id:"9.29",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 3",carpentry:true},
+    {id:"9.29a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 3",addon:true},
+    {id:"9.29b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Bedroom 3",addon:true},
+    {id:"9.B4a",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Bedroom 4",carpentry:true},
+    {id:"9.B4b",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Bedroom 4",carpentry:true},
+    {id:"9.B4c",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 4",carpentry:true},
+    {id:"9.B4d",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 4",addon:true},
+    {id:"9.B5a",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Bedroom 5",carpentry:true},
+    {id:"9.B5b",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Bedroom 5",carpentry:true},
+    {id:"9.B5c",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 5",carpentry:true},
+    {id:"9.B5d",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 5",addon:true},
+    {id:"9.30",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Master Toilet",carpentry:true},
+    {id:"9.31",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Master Toilet",carpentry:true},
+    {id:"9.31a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Master Toilet",addon:true},
+    {id:"9.31b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Master Toilet",addon:true},
+    {id:"9.32",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Toilet 2",carpentry:true},
+    {id:"9.33",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Toilet 2",carpentry:true},
+    {id:"9.33a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Toilet 2",addon:true},
+    {id:"9.33b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Toilet 2",addon:true},
+    {id:"9.T3a",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Toilet 3",carpentry:true},
+    {id:"9.T3b",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Toilet 3",carpentry:true},
+    {id:"9.T3c",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Toilet 3",addon:true},
+    {id:"9.T4a",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Toilet 4",carpentry:true},
+    {id:"9.T4b",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Toilet 4",carpentry:true},
+    {id:"9.T4c",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Toilet 4",addon:true},
+    {id:"9.34",desc:"Kitchen cabinet – casement under-counter workspace (<H920/D600mm)",unit:"ft run",price:164,zone:"Kitchen/Yard",carpentry:true},
+    {id:"9.35",desc:"Top-hung casement kitchen cabinet (<H900/D310mm)",unit:"ft run",price:164,zone:"Kitchen/Yard",carpentry:true},
+    {id:"9.36",desc:"Island kitchen with casement cabinet (<H1200/1100mm)",unit:"ft run",price:327,zone:"Kitchen/Yard",carpentry:true},
+    {id:"9.37",desc:"Full-height kitchen cabinet c/w 3-drawers (<H2900/D600mm)",unit:"ft run",price:818,zone:"Kitchen/Yard",carpentry:true},
+    {id:"9.38",desc:"Laminated frame glass door c/w aluminium dish rack & mechanical arm",unit:"LS",price:1635,zone:"Kitchen/Yard",carpentry:true},
+    {id:"9.38a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Kitchen/Yard",addon:true},
+    {id:"9.38b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Kitchen/Yard",addon:true},
+    {id:"9.39",desc:"Standard S/S dish rack (<L800mm)",unit:"Set",price:137,zone:"Kitchen/Yard",addon:true},
+    {id:"9.40",desc:"Handles design upgrade",unit:"Set",price:69,zone:"Kitchen/Yard",addon:true},
+    {id:"9.41",desc:"Drawers 60KG loading in wood carcass",unit:"Set",price:273,zone:"Kitchen/Yard",addon:true},
+    {id:"9.42",desc:"Drawers 90KG loading – mix aluminium frame",unit:"Set",price:477,zone:"Kitchen/Yard",addon:true},
+    {id:"9.43",desc:"Magic Corner 800mm depth in black metal",unit:"Set",price:1063,zone:"Kitchen/Yard",addon:true},
+    {id:"9.44",desc:"Magic Sauce pull-out L300mm depth in black metal",unit:"Set",price:1063,zone:"Kitchen/Yard",addon:true},
+  ]},
+  {id:10,code:"10",name:"Countertop",items:[
+    {id:"10.1",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Kitchen/Yard"},
+    {id:"10.2",desc:"Quartz countertop – basic range",unit:"ft run",price:0,zone:"Kitchen/Yard",addon:true},
+    {id:"10.3",desc:"Wood top – basic range",unit:"ft run",price:0,zone:"Kitchen/Yard",addon:true},
+    {id:"10.4",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Kitchen/Yard",addon:true},
+    {id:"10.5",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Master Toilet"},
+    {id:"10.6",desc:"Quartz countertop – basic range",unit:"ft run",price:0,zone:"Master Toilet",addon:true},
+    {id:"10.7",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Master Toilet",addon:true},
+    {id:"10.8",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Toilet 2"},
+    {id:"10.9",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Toilet 2",addon:true},
+    {id:"10.T3a",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Toilet 3"},
+    {id:"10.T3b",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Toilet 3",addon:true},
+    {id:"10.T4a",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Toilet 4"},
+    {id:"10.T4b",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Toilet 4",addon:true},
+  ]},
+  {id:11,code:"11",name:"Glazing & Doors",note:"Costs are best estimations; to be confirmed upon site visit",items:[
+    {id:"11.1",desc:"Timber door frame (<H2250/W900mm)",unit:"LS",price:300,zone:"Whole House"},
+    {id:"11.2",desc:"Extra height for timber door frame (add <H200mm)",unit:"LS",price:60,zone:"Whole House",addon:true},
+    {id:"11.3",desc:"Timber door c/w lever lockset (<H2250/W900mm)",unit:"LS",price:614,zone:"Whole House"},
+    {id:"11.4",desc:"Extra height for timber door (add <H200mm)",unit:"LS",price:120,zone:"Whole House",addon:true},
+    {id:"11.5",desc:"Concealed door (<H2900mm) – walk-in wardrobe/MBR",unit:"LS",price:614,zone:"Master Bedroom"},
+    {id:"11.6",desc:"Aluminium glass swing door – kitchen",unit:"LS",price:488,zone:"Kitchen/Yard"},
+    {id:"11.7",desc:"Glass fixed panel to half-height partition",unit:"sqft",price:9,zone:"Whole House"},
+    {id:"11.8",desc:"Bi-fold window",unit:"LS",price:654,zone:"Whole House"},
+    {id:"11.9",desc:"Sliding glass door",unit:"sqft",price:28,zone:"Whole House"},
+    {id:"11.10",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Master Toilet"},
+    {id:"11.11",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Toilet 2"},
+    {id:"11.11b",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Toilet 3"},
+    {id:"11.11c",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Toilet 4"},
+    {id:"11.12",desc:"10mm tempered fixed & casement glass shower screen c/w magnet seal",unit:"LS",price:682,zone:"Master Toilet"},
+    {id:"11.13",desc:"10mm tempered fixed glass for shower screen",unit:"LS",price:341,zone:"Master Toilet"},
+    {id:"11.14",desc:"Sliding glass door – bathroom",unit:"sqft",price:28,zone:"Toilet 2"},
+    {id:"11.14b",desc:"Sliding glass door – bathroom",unit:"sqft",price:28,zone:"Toilet 3"},
+    {id:"11.14c",desc:"Sliding glass door – bathroom",unit:"sqft",price:28,zone:"Toilet 4"},
+  ]},
+  {id:12,code:"12",name:"Paint & Wall Finishes",noZone:true,items:[
+    {id:"12.1",desc:"Paint walls – whole house, Nippon Vinilex 5000 (3-bedder)",unit:"LS",price:1800},
+    {id:"12.2",desc:"Paint walls – whole house, Nippon Vinilex 5000 (4-bedder)",unit:"LS",price:2657},
+    {id:"12.3",desc:"Paint walls – whole house, Nippon Vinilex 5000 (5-bedder / EA)",unit:"LS",price:3202},
+    {id:"12.4",desc:"Paint walls – whole house, Nippon Vinilex 5000 (Maisonette)",unit:"LS",price:3800},
+    {id:"12.5",desc:"Oil-based sealer (whole house)",unit:"LS",price:614},
+    {id:"12.6",desc:"Wallpaper (per roll, 10m H × 1.5m L)",unit:"Roll",price:682},
+    {id:"12.7",desc:"Acoustic wall panels",unit:"LS",price:682},
+    {id:"12.8",desc:"Fluted panels",unit:"LS",price:682},
+    {id:"12.9",desc:"Textured lime wash",unit:"LS",price:682},
+  ]},
+  {id:13,code:"13",name:"Miscellaneous",noZone:true,items:[
+    {id:"13.1",desc:"Smart lock installation",unit:"no.",price:280},
+    {id:"13.2",desc:"TV mounting",unit:"no.",price:110},
+    {id:"13.3",desc:"Curtain track installation",unit:"M",price:35},
+    {id:"13.4",desc:"Blinds installation",unit:"panel",price:45},
+  ]},
+];
+
+const DESIGN_ITEMS_CFG=[
+  {id:"1.1",desc:"Design consultation & services",psfPct:0.15,fixedPrice:null},
+  {id:"1.2",desc:"Spatial planning & layout in 2D (furniture, RCP, lighting plan)",psfPct:0.25,fixedPrice:null},
+  {id:"1.3",desc:"3D design rendering & perspective drawing (3 revisions)",psfPct:0.30,fixedPrice:null},
+  {id:"1.4",desc:"Elevation drawings – carpentry",psfPct:0.30,fixedPrice:null},
+  {id:"1.5",desc:"Styling of interior – 2-day service",psfPct:null,fixedPrice:380},
+  {id:"1.6",desc:"(+) Japandi Style Theme – with ornaments",psfPct:null,fixedPrice:500,addon:true},
+  {id:"1.7",desc:"(+) Japandi + Luxury Style Theme – with ornaments",psfPct:null,fixedPrice:1000,addon:true},
+];
+
+// ── STORAGE ───────────────────────────────────────────────────────────────────
+const loadVersions=()=>{try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");}catch{return[];}};
+const saveVersions=v=>localStorage.setItem(STORAGE_KEY,JSON.stringify(v));
+const loadTrades=()=>{
+  try{
+    const ov=JSON.parse(localStorage.getItem(RATECARD_KEY)||"null");
+    if(!ov)return DEFAULT_TRADES;
+    return DEFAULT_TRADES.map(t=>({...t,items:t.items.map(i=>{const o=ov[i.id];return o?{...i,...o}:i;})}));
+  }catch{return DEFAULT_TRADES;}
+};
+const saveTradeOverride=(id,fields)=>{
+  try{
+    const ov=JSON.parse(localStorage.getItem(RATECARD_KEY)||"{}");
+    ov[id]={...(ov[id]||{}),...fields};
+    localStorage.setItem(RATECARD_KEY,JSON.stringify(ov));
+  }catch{}
+};
+
+const blankQuote=(base=null)=>({
+  id:Date.now(),
+  name:base?`${base.projectName||base.name} — VO-${(base.voCount||0)+1}`:"New Quote",
+  projectName:base?.projectName||"",
+  isVO:!!base,parentId:base?.id||null,voNumber:base?(base.voCount||0)+1:0,
+  createdAt:todayStr(),updatedAt:todayStr(),
+  entity:base?.entity||"ikigai",status:"Draft",
+  unitSqft:base?.unitSqft||0,designOn:{},
+  client:base?{...base.client,ref:genRef(),date:todayStr()}:{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()},
+  idStaff:base?.idStaff||"",
+  qtys:{},itemOn:{},tiers:{},notes:{},zoneOverride:{},dupes:[],customs:[],removalOn:{},
+  openTrades:{1:true},openZones:{},
+  payKey:base?.payKey||"standard",customPay:base?.customPay||[],
+  disc:"",discOk:false,usePaypal:false,usePaynow:false,
+  sig:{clientName:"",date:todayStr(),agreed:false,directorDate:todayStr(),idDate:todayStr(),
+    summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",
+    idCanvas:"",directorCanvas:"",clientCanvas:"",
+    show2nd:false,client2Name:"",client2Date:todayStr(),client2Canvas:""},
+});
+
+// ── MINI COMPONENTS ───────────────────────────────────────────────────────────
+function Toggle({on,onClick,small,disabled}){
+  const w=small?28:36,h=small?16:20,d=small?11:14;
+  return(
+    <div onClick={e=>{e.stopPropagation();if(!disabled)onClick();}}
+      style={{width:w,height:h,borderRadius:20,background:on?C.gold:"#C8BFB5",cursor:disabled?"not-allowed":"pointer",position:"relative",transition:"background 0.18s",flexShrink:0,opacity:disabled?0.5:1}}>
+      <div style={{position:"absolute",top:(h-d)/2,left:on?w-d-2:2,width:d,height:d,borderRadius:"50%",background:"#fff",transition:"left 0.15s"}}/>
+    </div>
+  );
+}
+
+function CBtn({open,onClick,size=20}){
+  return(
+    <button onClick={e=>{e.stopPropagation();onClick();}}
+      style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,width:size,height:size,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.stone,fontSize:9,flexShrink:0,padding:0}}>
+      {open?"▲":"▼"}
+    </button>
+  );
+}
+
+// ── SIGNATURE CANVAS ──────────────────────────────────────────────────────────
+function SigCanvas({value,onChange,label,locked}){
+  const ref=useRef(null);
+  const drawing=useRef(false);
+  const lastPos=useRef(null);
+
+  const getPos=(e,canvas)=>{
+    const r=canvas.getBoundingClientRect();
+    const src=e.touches?e.touches[0]:e;
+    return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};
+  };
+
+  useEffect(()=>{
+    const c=ref.current;if(!c)return;
+    const ctx=c.getContext("2d");
+    if(value){const img=new Image();img.onload=()=>{ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(img,0,0);};img.src=value;}
+    else{ctx.clearRect(0,0,c.width,c.height);}
+  },[value]);
+
+  const start=e=>{
+    if(locked)return;
+    e.preventDefault();
+    drawing.current=true;
+    lastPos.current=getPos(e,ref.current);
+  };
+  const move=e=>{
+    if(!drawing.current||locked)return;
+    e.preventDefault();
+    const c=ref.current;const ctx=c.getContext("2d");
+    const pos=getPos(e,c);
+    ctx.beginPath();ctx.moveTo(lastPos.current.x,lastPos.current.y);
+    ctx.lineTo(pos.x,pos.y);
+    ctx.strokeStyle=C.ink;ctx.lineWidth=2;ctx.lineCap="round";ctx.stroke();
+    lastPos.current=pos;
+  };
+  const end=e=>{
+    if(!drawing.current)return;
+    drawing.current=false;
+    onChange(ref.current.toDataURL());
+  };
+  const clear=()=>{
+    if(locked)return;
+    const c=ref.current;
+    c.getContext("2d").clearRect(0,0,c.width,c.height);
+    onChange("");
+  };
+
+  return(
+    <div>
+      {label&&<div style={{fontSize:9,letterSpacing:1.5,color:C.stone,marginBottom:4,fontFamily:T.sans}}>{label}</div>}
+      <div style={{position:"relative",border:`1px dashed ${C.gold}`,borderRadius:3,background:"#FEFCF8",overflow:"hidden"}}>
+        <canvas ref={ref} width={340} height={80}
+          style={{display:"block",width:"100%",height:80,cursor:locked?"not-allowed":"crosshair",touchAction:"none"}}
+          onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+          onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
+        {!locked&&<button onClick={clear} style={{position:"absolute",top:4,right:4,background:"transparent",border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 6px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Clear</button>}
+      </div>
+    </div>
+  );
+}
+
+// ── ITEM ROW — extracted outside QuoteBuilder to prevent remount ──────────────
+const ItemRow=React.memo(function ItemRow({
+  item,tradeId,isDupe,isCustom,customObj,
+  isOn,qty,ep,tier,zone,img,isLocked,
+  onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,
+  dragHandlers,dragOver,
+  isVO,isRemoved,onRemove,
+}){
+  const lineT=isOn?qty*ep:0;
+  return(
+    <div
+      style={{borderBottom:`1px solid #F5F0E8`,background:!isOn?"#FAF7F2":qty>0?"#FFFDF8":"#fff",
+        opacity:dragOver?0.6:1}}>
+      {/* grid: drag | toggle | desc(flex) | qty | unit | price | img | total */}
+      <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 52px 48px 80px 44px 80px",gap:3,padding:"7px 10px",alignItems:"start",opacity:isOn?1:0.5}}>
+        <div style={{color:dragHandlers?.onPointerDown?C.gold:C.border,fontSize:13,textAlign:"center",paddingTop:2,cursor:dragHandlers?.onPointerDown&&isOn&&!isLocked?"grab":"default",userSelect:"none",...(dragHandlers||{})}}
+          title={dragHandlers?.onPointerDown?"Drag to copy to another zone":""}>⠿</div>
+        <div style={{display:"flex",justifyContent:"center",paddingTop:2}}>
+          <Toggle on={isOn} small disabled={isLocked} onClick={onToggle}/>
+        </div>
+        {/* DESCRIPTION — full width, wrap freely */}
+        <div>
+          <div style={{fontSize:12,fontFamily:T.sans,color:isOn?C.ink:C.stone,lineHeight:1.5,wordBreak:"break-word"}}>
+            {item.addon&&<span style={{border:`1px solid ${C.gold}`,color:C.gold,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>+</span>}
+            {isDupe&&<span style={{background:C.creamD,color:C.stone,borderRadius:2,padding:"0 4px",fontSize:9,marginRight:4}}>COPY</span>}
+            {isCustom&&<span style={{background:C.terraPale,color:C.terra,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>CUSTOM</span>}
+            {isCustom&&customObj&&!customObj.approved&&<span style={{background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>PENDING</span>}
+            {isRemoved&&<span style={{background:"#8B3A3A22",color:"#8B3A3A",border:"1px solid #8B3A3A44",borderRadius:2,padding:"0 5px",fontSize:9,fontWeight:700,marginLeft:4}}>REMOVED</span>}
+            {item.desc}
+          </div>
+          {isVO&&isOn&&!isDupe&&!isCustom&&(
+            <button onClick={e=>{e.stopPropagation();onRemove();}}
+              style={{marginTop:3,background:isRemoved?"#8B3A3A":"transparent",color:isRemoved?"#fff":"#8B3A3A",border:"1px solid #8B3A3A66",borderRadius:2,padding:"2px 7px",fontSize:9,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>
+              {isRemoved?"↩ Restore":"✕ Remove from scope"}
+            </button>
+          )}
+          {isOn&&item.carpentry&&(
+            <div style={{display:"flex",gap:3,marginTop:4,flexWrap:"wrap"}}>
+              {Object.entries(FINISH).map(([k,v])=>(
+                <button key={k} onClick={()=>onTier(k)}
+                  style={{background:tier===k?C.ink:C.creamD,color:tier===k?C.gold:C.stone,border:`1px solid ${tier===k?C.gold:C.border}`,borderRadius:2,padding:"2px 6px",fontSize:9,cursor:"pointer",fontFamily:T.sans}}>
+                  {v.label} ×{v.mult}
+                </button>
+              ))}
+            </div>
+          )}
+          {isOn&&(
+            <textarea
+              placeholder="Notes to client..."
+              value={note}
+              onChange={e=>onNote(e.target.value)}
+              rows={1}
+              style={{width:"100%",marginTop:4,border:`1px solid ${C.border}`,borderRadius:2,padding:"4px 7px",fontSize:11,fontFamily:T.sans,background:"#FAFAF8",color:C.stone,boxSizing:"border-box",resize:"vertical",minHeight:28,lineHeight:1.5,display:"block"}}
+            />
+          )}
+          {isCustom&&customObj&&!customObj.approved&&USER_ROLE>=ROLES.director&&(
+            <button onClick={onApprove}
+              style={{marginTop:3,background:C.gold,color:C.ink,border:"none",borderRadius:2,padding:"2px 8px",fontSize:9,cursor:"pointer",fontFamily:T.sans}}>Approve</button>
+          )}
+        </div>
+        {/* QTY */}
+        <div style={{textAlign:"right",paddingTop:2}}>
+          {isOn?(()=>{
+            const decUnits=["ft run","pfr","PFR","m run","sqft","sqm","M","Roll"];
+            const allowDec=decUnits.includes(item.unit);
+            return(
+            <input type="text" inputMode={allowDec?"decimal":"numeric"} disabled={isLocked}
+              value={qty===0?"":qty} placeholder="0"
+              onChange={e=>{
+                const v=e.target.value;
+                if(allowDec){if(/^\d*\.?\d{0,1}$/.test(v)||v==="")onQtyChange(v);}
+                else{onQtyChange(v.replace(/[^0-9]/g,""));}
+              }}
+              onBlur={e=>{
+                const v=parseFloat(e.target.value)||0;
+                onQtyBlur(allowDec?Math.round(v*2)/2:Math.round(v));
+              }}
+              style={{width:44,border:`1px solid ${C.border}`,borderRadius:3,padding:"3px 4px",fontSize:13,textAlign:"center",background:isLocked?"#F5F0E8":C.cream,fontFamily:T.sans}}
+            />
+            );
+          })():<span style={{color:C.border,fontSize:10}}>—</span>}
+        </div>
+        {/* UNIT */}
+        <div style={{fontSize:10,color:C.stone,textAlign:"right",paddingTop:4,fontFamily:T.sans,wordBreak:"break-word"}}>{item.unit}</div>
+        {/* PRICE */}
+        <div style={{fontFamily:T.serif,fontSize:13,textAlign:"right",color:ep>0?C.ink:C.stone,paddingTop:4}}>
+          {ep>0?fmt(ep):<span style={{color:C.gold,fontSize:11}}>POA</span>}
+        </div>
+        {/* IMG */}
+        <div style={{textAlign:"right",paddingTop:2}}>
+          {isOn&&(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:2}}>
+              {img&&<img src={img} alt="" style={{width:20,height:20,objectFit:"cover",borderRadius:2,border:`1px solid ${C.border}`}}/>}
+              <button onClick={onImg} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 5px",fontSize:9,cursor:"pointer",color:img?C.success:C.stone,fontFamily:T.sans}}>{img?"✓":"IMG"}</button>
+            </div>
+          )}
+        </div>
+        {/* TOTAL */}
+        <div style={{fontFamily:T.serif,fontSize:13,color:isOn&&qty>0?C.ink:C.border,textAlign:"right",paddingTop:4}}>{isOn&&qty>0?fmt(lineT):"—"}</div>
+      </div>
+    </div>
+  );
+});
+
+// ── VERSION MANAGER ───────────────────────────────────────────────────────────
+function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
+  const[versions,setVersions]=useState(loadVersions);
+  const del=id=>{if(!window.confirm("Delete this quote?"))return;const v=versions.filter(x=>x.id!==id);setVersions(v);saveVersions(v);};
+  const dup=q=>{
+    const copy={...JSON.parse(JSON.stringify(q)),id:Date.now(),name:`${q.name} (Copy)`,status:"Draft",isVO:false,parentId:null,voNumber:0,createdAt:todayStr(),updatedAt:todayStr()};
+    copy.client={...copy.client,ref:genRef(),date:todayStr()};
+    const v=[copy,...versions];setVersions(v);saveVersions(v);
+  };
+  const createVO=q=>{
+    const voCount=(q.voCount||0)+1;
+    const updParent={...q,voCount};
+    const updated=versions.map(x=>x.id===q.id?updParent:x);
+    saveVersions(updated);setVersions(updated);
+    onNewVO(updParent);
+  };
+  const[search,setSearch]=useState("");
+  const parents=versions.filter(q=>!q.isVO).filter(q=>{
+    if(!search.trim())return true;
+    const s=search.toLowerCase();
+    return(q.name||"").toLowerCase().includes(s)||(q.client?.name||"").toLowerCase().includes(s)||(q.projectName||"").toLowerCase().includes(s)||(q.client?.ref||"").toLowerCase().includes(s);
+  });
+  const vosOf=id=>versions.filter(q=>q.parentId===id);
+  return(
+    <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh"}}>
+      <div style={{background:C.ink,padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,color:C.gold,letterSpacing:5}}>IKIGAI INTERIOR</div>
+          <div style={{fontSize:9,color:C.stone,letterSpacing:3,marginTop:2}}>CODSTUDIO — QUOTATION BUILDER v6.4</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onAdmin} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⚙ Admin</button>
+          <button onClick={()=>alert("Commercial quotes — coming soon in v7.")} style={{background:"transparent",border:`1px solid ${C.gold}66`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.gold,fontFamily:T.sans,fontWeight:600}}>🏢 Commercial</button>
+          <button onClick={onNew} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans,letterSpacing:1}}>+ New Quote</button>
+        </div>
+      </div>
+      <div style={{maxWidth:920,margin:"0 auto",padding:"28px 20px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+          <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.ink}}>All Quotations</div>
+          <input placeholder="Search by name, client, ref…" value={search} onChange={e=>setSearch(e.target.value)}
+            style={{border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 14px",fontSize:12,fontFamily:T.sans,background:C.cream,color:C.ink,width:240,outline:"none"}}/>
+        </div>
+        {parents.length===0?(
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"48px",textAlign:"center"}}>
+            <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.stone,marginBottom:8}}>No quotes yet</div>
+            <button onClick={onNew} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>+ New Quote</button>
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {parents.map(q=>{
+              const stCol=STATUS_COL[q.status]||C.stone;
+              const vos=vosOf(q.id);
+              return(
+                <div key={q.id}>
+                  <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"16px 20px",display:"flex",alignItems:"center",gap:16}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4,flexWrap:"wrap"}}>
+                        <span style={{fontFamily:T.serif,fontSize:17,fontWeight:300,color:C.ink}}>{q.name||"Untitled"}</span>
+                        {q.projectName&&<span style={{fontSize:11,color:C.stone}}>— {q.projectName}</span>}
+                        <span style={{background:stCol+"22",border:`1px solid ${stCol}`,color:stCol,borderRadius:3,padding:"1px 8px",fontSize:9,fontWeight:600,letterSpacing:1}}>{q.status}</span>
+                        {vos.length>0&&<span style={{background:C.terraPale,color:C.terra,borderRadius:3,padding:"1px 7px",fontSize:9,fontWeight:600}}>{vos.length} VO{vos.length>1?"s":""}</span>}
+                      </div>
+                      <div style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>
+                        {q.client?.name&&<span style={{marginRight:12}}>{q.client.name}</span>}
+                        <span style={{marginRight:12}}>{q.client?.ref||"—"}</span>
+                        <span>Updated {q.updatedAt}</span>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {q.status==="Signed"&&<button onClick={()=>createVO(q)} style={{background:C.terraPale,border:`1px solid ${C.terra}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.terra,fontWeight:600}}>+ VO</button>}
+                      <button onClick={()=>dup(q)} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>Duplicate</button>
+                      <button onClick={()=>onOpen(q)} style={{background:C.ink,border:"none",borderRadius:3,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.gold,fontWeight:600}}>Open →</button>
+                      <button onClick={()=>del(q.id)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.danger}}>✕</button>
+                    </div>
+                  </div>
+                  {vos.map(vo=>{
+                    const vsCol=STATUS_COL[vo.status]||C.stone;
+                    return(
+                      <div key={vo.id} style={{background:"#FFF8F2",border:`1px solid ${C.terra}44`,borderRadius:4,padding:"11px 20px",display:"flex",alignItems:"center",gap:14,marginTop:4,marginLeft:28}}>
+                        <div style={{width:3,height:30,background:C.terra,borderRadius:2,flexShrink:0}}/>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                            <span style={{background:C.terra,color:"#fff",borderRadius:3,padding:"1px 7px",fontSize:9,fontWeight:700}}>VO-{vo.voNumber}</span>
+                            <span style={{fontFamily:T.serif,fontSize:15,fontWeight:300,color:C.ink}}>{vo.name}</span>
+                            <span style={{background:vsCol+"22",border:`1px solid ${vsCol}`,color:vsCol,borderRadius:3,padding:"1px 8px",fontSize:9,fontWeight:600}}>{vo.status}</span>
+                          </div>
+                          <div style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>{vo.client?.ref||"—"} · Updated {vo.updatedAt}</div>
+                        </div>
+                        <div style={{display:"flex",gap:6}}>
+                          <button onClick={()=>onOpen(vo)} style={{background:C.terra,border:"none",borderRadius:3,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:"#fff",fontWeight:600}}>Open →</button>
+                          <button onClick={()=>del(vo.id)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.danger}}>✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ADMIN PANEL ───────────────────────────────────────────────────────────────
+function AdminPanel({onBack}){
+  const[auth,setAuth]=useState(false);
+  const[pin,setPin]=useState("");
+  const[trades,setTrades]=useState(loadTrades);
+  const[editId,setEditId]=useState(null);
+  const[editBuf,setEditBuf]=useState({});
+  const[csvMsg,setCsvMsg]=useState("");
+  const fileRef=useRef(null);
+
+  const tryAuth=()=>{if(pin===DIRECTOR_PIN)setAuth(true);else alert("Incorrect PIN");};
+
+  const startEdit=(item)=>{setEditId(item.id);setEditBuf({desc:item.desc,price:String(item.price),unit:item.unit});};
+  const saveEdit=()=>{
+    const fields={desc:editBuf.desc,price:parseFloat(editBuf.price)||0,unit:editBuf.unit};
+    saveTradeOverride(editId,fields);
+    setTrades(prev=>prev.map(t=>({...t,items:t.items.map(i=>i.id===editId?{...i,...fields}:i)})));
+    setEditId(null);
+  };
+
+  const handleCsv=e=>{
+    const f=e.target.files[0];if(!f)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const text=ev.target.result;
+        const rows=text.split("\n").map(r=>r.split(",").map(c=>c.trim().replace(/^"|"$/g,"")));
+        const header=rows[0].map(h=>h.toLowerCase());
+        const idIdx=header.indexOf("id"),descIdx=header.indexOf("desc"),priceIdx=header.indexOf("price"),unitIdx=header.indexOf("unit");
+        if(idIdx<0||descIdx<0||priceIdx<0)throw new Error("CSV must have columns: id, desc, price, unit");
+        let count=0;
+        rows.slice(1).forEach(row=>{
+          if(!row[idIdx])return;
+          const fields={};
+          if(descIdx>=0&&row[descIdx])fields.desc=row[descIdx];
+          if(priceIdx>=0&&row[priceIdx])fields.price=parseFloat(row[priceIdx])||0;
+          if(unitIdx>=0&&row[unitIdx])fields.unit=row[unitIdx];
+          saveTradeOverride(row[idIdx],fields);count++;
+        });
+        setTrades(loadTrades());
+        setCsvMsg(`✓ ${count} items updated from CSV`);
+      }catch(err){setCsvMsg("✕ Error: "+err.message);}
+    };
+    reader.readAsText(f);
+  };
+
+  if(!auth)return(
+    <div style={{background:C.cream,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:T.sans}}>
+      <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"40px",width:320,textAlign:"center"}}>
+        <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,color:C.ink,marginBottom:6}}>Admin Access</div>
+        <div style={{fontSize:11,color:C.stone,marginBottom:20}}>Director PIN required</div>
+        <input type="password" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&tryAuth()}
+          placeholder="Enter PIN" style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"10px",fontSize:13,fontFamily:T.sans,marginBottom:10,boxSizing:"border-box"}}/>
+        <button onClick={tryAuth} style={{width:"100%",background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans,marginBottom:10}}>Unlock</button>
+        <button onClick={onBack} style={{background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans}}>← Back</button>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{background:C.cream,minHeight:"100vh",fontFamily:T.sans}}>
+      <div style={{background:C.ink,padding:"14px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontFamily:T.serif,fontSize:16,color:C.gold,letterSpacing:3}}>CODSTUDIO ADMIN</div>
+          <div style={{fontSize:9,color:C.stone,letterSpacing:2}}>RATE CARD EDITOR — DIRECTOR ONLY</div>
+        </div>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"6px 12px",fontSize:10,cursor:"pointer",color:C.stone}}>← Dashboard</button>
+      </div>
+      <div style={{maxWidth:1000,margin:"0 auto",padding:"24px 20px"}}>
+        {/* BULK CSV */}
+        <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"20px",marginBottom:16}}>
+          <div style={{fontFamily:T.serif,fontSize:17,fontWeight:300,marginBottom:4}}>Bulk Upload via CSV</div>
+          <div style={{fontSize:11,color:C.stone,marginBottom:12}}>CSV must have columns: <strong>id, desc, price, unit</strong> (header row required). Item IDs must match existing rate card IDs (e.g. 4.1, 9.13).</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input ref={fileRef} type="file" accept=".csv" onChange={handleCsv} style={{display:"none"}}/>
+            <button onClick={()=>fileRef.current?.click()} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"8px 16px",fontSize:11,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>Choose CSV File</button>
+            {csvMsg&&<span style={{fontSize:11,color:csvMsg.startsWith("✓")?C.success:C.danger}}>{csvMsg}</span>}
+          </div>
+        </div>
+        {/* INLINE EDITOR */}
+        <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,overflow:"hidden"}}>
+          <div style={{padding:"14px 20px",fontFamily:T.serif,fontSize:17,fontWeight:300,borderBottom:`1px solid ${C.border}`}}>Inline Item Editor</div>
+          <div style={{display:"grid",gridTemplateColumns:"60px 1fr 80px 70px 80px",gap:0,background:C.creamD,padding:"6px 16px"}}>
+            {["ID","DESCRIPTION","PRICE","UNIT",""].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1,color:C.stone}}>{h}</div>)}
+          </div>
+          <div style={{maxHeight:"60vh",overflowY:"auto"}}>
+            {trades.map(trade=>(
+              <div key={trade.id}>
+                <div style={{padding:"8px 16px",background:C.creamD,borderTop:`1px solid ${C.border}`,fontFamily:T.sans,fontSize:10,fontWeight:600,letterSpacing:1,color:C.stone}}>{trade.code} — {trade.name}</div>
+                {trade.items.map(item=>(
+                  <div key={item.id} style={{display:"grid",gridTemplateColumns:"60px 1fr 80px 70px 80px",gap:0,padding:"6px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"center",background:editId===item.id?"#FFFDF5":"#fff"}}>
+                    <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{item.id}</div>
+                    {editId===item.id?(
+                      <>
+                        <input value={editBuf.desc} onChange={e=>setEditBuf(b=>({...b,desc:e.target.value}))} style={{border:`1px solid ${C.gold}`,borderRadius:2,padding:"3px 6px",fontSize:11,fontFamily:T.sans,marginRight:6}}/>
+                        <input value={editBuf.price} onChange={e=>setEditBuf(b=>({...b,price:e.target.value}))} style={{border:`1px solid ${C.gold}`,borderRadius:2,padding:"3px 6px",fontSize:11,fontFamily:T.sans,width:70,marginRight:6}}/>
+                        <input value={editBuf.unit} onChange={e=>setEditBuf(b=>({...b,unit:e.target.value}))} style={{border:`1px solid ${C.gold}`,borderRadius:2,padding:"3px 6px",fontSize:11,fontFamily:T.sans,width:60,marginRight:6}}/>
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={saveEdit} style={{background:C.gold,color:C.ink,border:"none",borderRadius:2,padding:"3px 8px",fontSize:9,cursor:"pointer",fontFamily:T.sans}}>Save</button>
+                          <button onClick={()=>setEditId(null)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:2,padding:"3px 6px",fontSize:9,cursor:"pointer",color:C.stone}}>✕</button>
+                        </div>
+                      </>
+                    ):(
+                      <>
+                        <div style={{fontSize:11,color:C.ink,fontFamily:T.sans,paddingRight:8}}>{item.desc}</div>
+                        <div style={{fontSize:11,fontFamily:T.serif,color:C.stone}}>{item.price>0?fmt(item.price):"POA"}</div>
+                        <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{item.unit}</div>
+                        <button onClick={()=>startEdit(item)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:2,padding:"3px 8px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Edit</button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── QUOTE BUILDER ─────────────────────────────────────────────────────────────
+function QuoteBuilder({initData,onSave,onBack}){
+  const TRADES=useMemo(()=>loadTrades(),[]);
+  const[step,setStep]=useState("quote");
+  const[tab,setTab]=useState("summary");
+  const[quoteName,setQuoteName]=useState(initData.name||"New Quote");
+  const[projectName,setProjectName]=useState(initData.projectName||"");
+  const isVO=initData.isVO||false;
+  const voNumber=initData.voNumber||0;
+  const[entity,setEntity]=useState(initData.entity||"ikigai");
+  const ent=ENTITIES.find(e=>e.id===entity);
+  const[client,setClient]=useState(initData.client||{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()});
+  const[idStaff,setIdStaff]=useState(initData.idStaff||"");
+  const[status,setStatus]=useState(initData.status||"Draft");
+  const[unitSqft,setUnitSqft]=useState(initData.unitSqft||0);
+  const[designOn,setDesignOn]=useState(initData.designOn||{});
+  const[qtys,setQtys]=useState(initData.qtys||{});
+  const[itemOn,setItemOn]=useState(initData.itemOn||{});
+  const[tiers,setTiers]=useState(initData.tiers||{});
+  const[notes,setNotes]=useState(initData.notes||{});
+  const[imgs,setImgs]=useState({});
+  const[zoneOverride,setZoneOverride]=useState(initData.zoneOverride||{});
+  const[dupes,setDupes]=useState(initData.dupes||[]);
+  const[openTrades,setOpenTrades]=useState(initData.openTrades||{1:true});
+  const[openZones,setOpenZones]=useState(initData.openZones||{});
+  const[payKey,setPayKey]=useState(initData.payKey||"standard");
+  const[customPay,setCustomPay]=useState(initData.customPay||[]);
+  const[showCPay,setShowCPay]=useState(false);
+  const[disc,setDisc]=useState(initData.disc||"");
+  const[discOk,setDiscOk]=useState(initData.discOk||false);
+  const[usePaypal,setUsePaypal]=useState(initData.usePaypal||false);
+  const[usePaynow,setUsePaynow]=useState(initData.usePaynow||false);
+  const[customs,setCustoms]=useState(initData.customs||[]);
+  const[removalOn,setRemovalOn]=useState(initData.removalOn||{});
+  const[customForm,setCustomForm]=useState(null);
+  const[sig,setSig]=useState(initData.sig||{clientName:"",date:"",agreed:false,directorDate:"",idDate:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""});
+  const[showEmail,setShowEmail]=useState(false);
+  const[showFullPrintPin,setShowFullPrintPin]=useState(false);
+  const[printPin,setPrintPin]=useState("");
+  const[dragId,setDragId]=useState(null);
+  const[dragTarget,setDragTarget]=useState(null);
+  const imgRefs=useRef({});
+  const saveTimerRef=useRef(null);
+
+  const isLocked=status==="Sent"||status==="Signed";
+  const isFullyLocked=status==="Signed";
+  const gst=ent.gst;
+  const isOn=id=>itemOn[id]===true;
+  const getZone=item=>zoneOverride[item.id]||item.zone||"Whole House";
+  const getTier=id=>tiers[id]||"base";
+  const getEP=item=>{const t=getTier(item.id);if(!item.carpentry||t==="base")return item.price;return Math.round(item.price*FINISH[t].mult*100)/100;};
+  const zK=(tid,z)=>`${tid}-${z}`;
+  const isZO=(tid,z)=>openZones[zK(tid,z)]!==false;
+
+  // Auto-save debounced
+  useEffect(()=>{
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current=setTimeout(()=>{
+      const data=buildSaveData();
+      onSave(data);
+    },1500);
+    return()=>clearTimeout(saveTimerRef.current);
+  },[quoteName,projectName,entity,client,idStaff,status,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig]);
+
+  const buildSaveData=()=>({
+    id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
+    entity,status,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
+    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig
+  });
+  const handleSave=()=>onSave(buildSaveData());
+
+  const handleImg=(id,e)=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setImgs(i=>({...i,[id]:ev.target.result}));r.readAsDataURL(f);};
+
+  // Trade/zone logic
+  const tradeIDs=t=>[...t.items.map(i=>i.id),...dupes.filter(d=>d.tradeId===t.id).map(d=>d.id),...customs.filter(c=>c.tradeId===t.id).map(c=>c.id)];
+  const zoneIDs=(t,z)=>[...t.items.filter(i=>getZone(i)===z).map(i=>i.id),...dupes.filter(d=>d.tradeId===t.id&&d.zone===z).map(d=>d.id),...customs.filter(c=>c.tradeId===t.id&&c.zone===z).map(c=>c.id)];
+  const tradeOn=t=>tradeIDs(t).some(id=>itemOn[id]===true);
+  const zoneOn=(t,z)=>zoneIDs(t,z).some(id=>itemOn[id]===true);
+  const toggleTM=t=>{
+    const ids=tradeIDs(t);
+    const willBeOn=!ids.some(id=>itemOn[id]===true);
+    const ns={};ids.forEach(id=>{ns[id]=willBeOn;});
+    setItemOn(o=>({...o,...ns}));
+    setOpenTrades(o=>({...o,[t.id]:willBeOn}));
+    const zu={};ZONE_ORDER.forEach(z=>{zu[zK(t.id,z)]=willBeOn;});
+    setOpenZones(o=>({...o,...zu}));
+  };
+  const toggleZM=(t,z)=>{
+    const ids=zoneIDs(t,z);
+    const willBeOn=!ids.some(id=>itemOn[id]===true);
+    const ns={};ids.forEach(id=>{ns[id]=willBeOn;});
+    setItemOn(o=>({...o,...ns}));
+    if(willBeOn)setOpenTrades(o=>({...o,[t.id]:true}));
+    setOpenZones(o=>({...o,[zK(t.id,z)]:true}));
+  };
+  const toggleItem=(id,tradeId,zone)=>{
+    const nowOn=!isOn(id);setItemOn(o=>({...o,[id]:nowOn}));
+    if(nowOn){setOpenTrades(o=>({...o,[tradeId]:true}));setOpenZones(o=>({...o,[zK(tradeId,zone)]:true}));}
+  };
+
+  // Drag via pointer events
+  const pointerDragHandlers=(item,trade)=>{
+    if(trade.noZone||!isOn(item.id)||isLocked)return{};
+    return{
+      onPointerDown:e=>{
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setDragId(item.id);
+      },
+      onPointerUp:e=>{
+        if(dragId&&dragTarget){
+          const{tradeId:tId,zone}=dragTarget;
+          const srcZ=getZone(item);
+          if(srcZ!==zone){
+            const already=dupes.some(d=>d.srcId===dragId&&d.zone===zone&&d.tradeId===tId);
+            if(!already){
+              const nid=`dupe-${dragId}-${zone}-${Date.now()}`;
+              setDupes(d=>[...d,{id:nid,srcId:dragId,tradeId:tId,zone,desc:item.desc,unit:item.unit,price:getEP(item),carpentry:item.carpentry,addon:item.addon}]);
+            }
+          }
+        }
+        setDragId(null);setDragTarget(null);
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      },
+      onPointerMove:e=>{
+        if(!dragId)return;
+        // find zone under cursor
+        const els=document.elementsFromPoint(e.clientX,e.clientY);
+        const zoneEl=els.find(el=>el.dataset&&el.dataset.zone&&el.dataset.tradeid);
+        if(zoneEl){
+          setDragTarget({tradeId:parseInt(zoneEl.dataset.tradeid),zone:zoneEl.dataset.zone});
+        }
+      },
+    };
+  };
+
+  // Subtotals
+  const tradeSubs=useMemo(()=>TRADES.map(t=>{
+    const base=t.items.reduce((s,i)=>isOn(i.id)?s+(parseFloat(qtys[i.id])||0)*getEP(i):s,0);
+    const dp=dupes.filter(d=>d.tradeId===t.id).reduce((s,d)=>isOn(d.id)?s+(parseFloat(qtys[d.id])||0)*d.price:s,0);
+    const cu=customs.filter(c=>c.tradeId===t.id&&c.approved).reduce((s,c)=>isOn(c.id)?s+(parseFloat(qtys[c.id])||1)*c.price:s,0);
+    const removal=isVO?t.items.reduce((s,i)=>removalOn[i.id]&&isOn(i.id)?s-((parseFloat(qtys[i.id])||0)*getEP(i)):s,0):0;
+    return{id:t.id,code:t.code,name:t.name,sub:base+dp+cu+removal};
+  }),[qtys,itemOn,tiers,dupes,customs,removalOn]);
+
+  const getDesignPrice=item=>{
+    if(item.fixedPrice!==null)return item.fixedPrice;
+    return Math.round(unitSqft*DESIGN_PSF_RATE*(item.psfPct||0));
+  };
+  const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0),[designOn,unitSqft]);
+  const subtotal=designSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0);
+  const discAmt=discOk?(parseFloat(disc)||0):0;
+  const afterDisc=subtotal-discAmt;
+  const gstAmt=gst?afterDisc*0.09:0;
+  const total=afterDisc+gstAmt;
+  const paypalFee=usePaypal?total*0.035:0;
+  const grandTotal=total+paypalFee;
+  const activePayItems=useMemo(()=>payKey==="custom"?customPay:PAY_PRESETS[payKey]?.items||[],[payKey,customPay]);
+  const cpTotal=customPay.reduce((s,p)=>s+(parseFloat(p.pct)||0),0);
+
+  const saveCustom=()=>{
+    if(!customForm?.desc||!customForm?.price)return;
+    const id=`c${Date.now()}`;
+    const capDesc=customForm.desc.charAt(0).toUpperCase()+customForm.desc.slice(1);
+    setCustoms(c=>[...c,{id,tradeId:customForm.tradeId,zone:customForm.zone||"Whole House",desc:capDesc,unit:customForm.unit||"LS",price:parseFloat(customForm.price)||0,approved:false}]);
+    setCustomForm(null);
+  };
+
+  // Shared UI helpers
+  const Btn=({ch,onClick,bg=C.gold,col=C.ink,sm,dis})=><button onClick={onClick} disabled={dis} style={{background:dis?C.creamD:bg,color:dis?C.stone:col,border:"none",borderRadius:3,padding:sm?"5px 10px":"8px 16px",fontSize:sm?9:11,fontWeight:600,cursor:dis?"not-allowed":"pointer",fontFamily:T.sans,opacity:dis?0.6:1}}>{ch}</button>;
+  const OBtn=({ch,onClick,col=C.stone,sm})=><button onClick={onClick} style={{background:"transparent",color:col,border:`1px solid ${col}`,borderRadius:3,padding:sm?"5px 10px":"8px 16px",fontSize:sm?9:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>{ch}</button>;
+  const sL={fontFamily:T.sans,fontSize:10,fontWeight:600,letterSpacing:1.5,color:C.stone,textTransform:"uppercase",display:"block",marginBottom:5};
+  const card={background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:10,overflow:"hidden"};
+  const inp=(k,lbl,ph)=>(
+    <div>
+      <label style={sL}>{lbl}</label>
+      <input style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 11px",fontSize:13,fontFamily:T.sans,background:C.cream,color:C.ink,boxSizing:"border-box"}}
+        placeholder={ph} value={client[k]||""} onChange={e=>setClient(c=>({...c,[k]:e.target.value}))}/>
+    </div>
+  );
+
+  // Print
+  const doPrintSummary=()=>{
+    document.querySelectorAll(".print-page").forEach(el=>{el.style.display="none";});
+    document.querySelectorAll(".print-summary").forEach(el=>{el.style.display="block";});
+    window.print();
+    document.querySelectorAll(".print-page").forEach(el=>{el.style.removeProperty("display");});
+    document.querySelectorAll(".print-summary").forEach(el=>{el.style.removeProperty("display");});
+  };
+  const doFullPrint=()=>{
+    if(printPin===DIRECTOR_PIN){setShowFullPrintPin(false);setPrintPin("");window.print();}
+    else alert("Incorrect PIN");
+  };
+
+  // Sign document
+  const signedAll=sig.summaryCanvas&&sig.tcCanvas&&sig.warrantyCanvas&&sig.clientName&&sig.agreed;
+
+  return(
+    <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh",color:C.ink}}>
+      {/* TOPBAR */}
+      <div className="no-print" style={{background:C.ink,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6,position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>{handleSave();onBack();}} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>← All</button>
+          <div>
+            <input value={quoteName} onChange={e=>setQuoteName(e.target.value)}
+              style={{fontFamily:T.serif,fontSize:16,fontWeight:300,color:C.gold,background:"transparent",border:"none",outline:"none",letterSpacing:1,width:180}}/>
+            {projectName&&<span style={{fontSize:11,color:C.stone,marginLeft:6}}>· {projectName}</span>}
+            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:1}}>
+              {isVO&&<span style={{background:C.terra,color:"#fff",borderRadius:3,padding:"1px 7px",fontSize:9,fontWeight:700,letterSpacing:1}}>VO-{voNumber}</span>}
+              <span style={{fontSize:8,color:C.stone,letterSpacing:2}}>CODSTUDIO v6.5</span>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}}>
+          {/* Status progress pill */}
+          <div style={{display:"flex",alignItems:"center",gap:0,border:`1px solid ${C.stone}33`,borderRadius:3,overflow:"hidden",flexShrink:0}}>
+            {["Draft","Sent","Signed"].map((st,i)=>{
+              const active=status===st;
+              const past=["Draft","Sent","Signed"].indexOf(status)>i;
+              return(
+                <div key={st} style={{padding:"4px 10px",fontSize:9,fontWeight:600,letterSpacing:1.5,
+                  background:active?STATUS_COL[st]:past?"#2A2018":"transparent",
+                  color:active?"#fff":past?C.stone+"88":C.stone+"55",
+                  borderRight:i<2?`1px solid ${C.stone}33`:undefined,
+                  fontFamily:T.sans,transition:"all .2s"}}>
+                  {active&&"● "}{st.toUpperCase()}
+                </div>
+              );
+            })}
+          </div>
+          {isLocked&&<span style={{fontSize:9,color:C.terra,letterSpacing:1,fontFamily:T.sans}}>{isFullyLocked?"🔒 SIGNED":"🔒 SENT"}</span>}
+          {step==="quote"&&["Sent","Signed"].map(st=>(
+            <button key={st} onClick={()=>{
+              if(st===status)return;
+              if(st==="Sent"&&!window.confirm("Mark as Sent? Items will be locked."))return;
+              if(st==="Signed"&&!window.confirm("Mark as Signed? Fully locks the quote."))return;
+              if(st==="Draft"&&isLocked&&!window.confirm("Revert to Draft?"))return;
+              setStatus(st);
+            }} style={{background:st===status?STATUS_COL[st]+"28":"transparent",color:st===status?STATUS_COL[st]:C.stone,border:`1px solid ${st===status?STATUS_COL[st]:C.stone+"44"}`,borderRadius:3,padding:"4px 9px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>{st}</button>
+          ))}
+          <div style={{width:1,height:14,background:C.stone+"44"}}/>
+          <button onClick={handleSave} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>Save</button>
+          <button onClick={()=>setShowEmail(e=>!e)} style={{background:showEmail?C.terra:C.creamD,border:`1px solid ${showEmail?C.terra:C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:showEmail?C.white:C.stone,fontWeight:600}}>✉ Email</button>
+          {step==="preview"&&(
+            <>
+              <OBtn ch="← Edit" onClick={()=>setStep("quote")} col={C.gold} sm/>
+              <button onClick={doPrintSummary} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🖨 Print Summary</button>
+              <button onClick={()=>setShowFullPrintPin(p=>!p)} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🔒 Full Print</button>
+            </>
+          )}
+          {step==="quote"&&subtotal>0&&(
+            <Btn ch="Sign Document →" onClick={()=>{handleSave();setStep("preview");setTab("sign");}}/>
+          )}
+          {step==="quote"&&subtotal>0&&(
+            <OBtn ch="Preview →" onClick={()=>{handleSave();setStep("preview");setTab("summary");}} col={C.gold} sm/>
+          )}
+        </div>
+      </div>
+
+      {/* FULL PRINT PIN PROMPT */}
+      {showFullPrintPin&&(
+        <div className="no-print" style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"14px 18px",margin:"8px 16px 0",display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>Director PIN to unlock full print:</span>
+          <input type="password" value={printPin} onChange={e=>setPrintPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doFullPrint()} placeholder="PIN" style={{width:100,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 8px",fontSize:12,fontFamily:T.sans}}/>
+          <Btn ch="Unlock & Print" onClick={doFullPrint} sm/>
+          <button onClick={()=>{setShowFullPrintPin(false);setPrintPin("");}} style={{background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans}}>Cancel</button>
+        </div>
+      )}
+
+      {/* EMAIL PANEL */}
+      {showEmail&&(
+        <div className="no-print" style={{background:"#FFFDF5",border:`1px solid ${C.gold}55`,borderRadius:4,padding:"16px 20px",margin:"8px 16px 0"}}>
+          <div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone,marginBottom:10,fontFamily:T.sans}}>EMAIL QUOTE LINK</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div>
+              <label style={sL}>Client Email (Primary)</label>
+              <input value={client.email||""} onChange={e=>setClient(c=>({...c,email:e.target.value}))} placeholder="client@email.com"
+                style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"7px 10px",fontSize:12,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
+            </div>
+            <div>
+              <label style={sL}>CC Email (Optional)</label>
+              <input value={client.email2||""} onChange={e=>setClient(c=>({...c,email2:e.target.value}))} placeholder="optional@email.com"
+                style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"7px 10px",fontSize:12,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          <div style={{fontSize:11,color:C.stone,marginBottom:8,fontFamily:T.sans}}>
+            When sent, this quote will be shared as a read-only link. Auto CC: <strong>tammy.vu@ikigaiinterior.com</strong> · <strong>admin@ikigaiinterior.com</strong> · <strong>accounts@ikigaiinterior.com</strong>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <a href={`mailto:${client.email||""}?cc=${client.email2||""},tammy.vu@ikigaiinterior.com,admin@ikigaiinterior.com,accounts@ikigaiinterior.com&subject=Quotation ${client.ref} — Ikigai Interior&body=Dear ${client.name||""},\n\nPlease find your quotation (Ref: ${client.ref}) attached for review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff||"Dylan Lu"}\nIkigai Interior Pte Ltd`}
+              style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"8px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,textDecoration:"none",display:"inline-block"}}>
+              ✉ Open in Mail App
+            </a>
+            <button onClick={()=>setShowEmail(false)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 12px",fontSize:11,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Close</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{maxWidth:1160,margin:"0 auto",padding:"16px 14px"}}>
+      {step==="quote"&&(<>
+        {/* ENTITY */}
+        <div style={{...card,padding:"14px 18px",marginBottom:10}}>
+          <label style={sL}>Billing Entity</label>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {ENTITIES.map(e=>(
+              <button key={e.id} onClick={()=>{if(!isLocked)setEntity(e.id);}}
+                style={{background:e.id===entity?C.ink:C.creamD,color:e.id===entity?C.gold:C.stone,border:`1px solid ${e.id===entity?C.gold:C.border}`,borderRadius:3,padding:"8px 16px",fontSize:11,cursor:isLocked?"not-allowed":"pointer",fontFamily:T.sans,fontWeight:600,textAlign:"left",opacity:isLocked&&e.id!==entity?0.4:1}}>
+                <div>{e.label}</div><div style={{fontSize:9,opacity:0.7,marginTop:1}}>{e.sub}{e.gst?" — GST 9% auto-applied":""}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* CLIENT */}
+        <div style={{...card,padding:"16px 18px",marginBottom:10}}>
+          <div style={{fontFamily:T.serif,fontSize:16,fontWeight:300,marginBottom:10}}>Client & Project Details</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            {inp("name","Client Name","Mr / Ms ...")}
+            <div>
+              <label style={sL}>Project Name</label>
+              <input style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 11px",fontSize:13,fontFamily:T.sans,background:C.cream,color:C.ink,boxSizing:"border-box"}}
+                placeholder="e.g. The Myst — Evelyn & Kenrick" value={projectName} onChange={e=>setProjectName(e.target.value)}/>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
+            {inp("address","Property Address","Block / Unit / Development")}
+            {inp("email","Client Email","client@email.com")}
+            {inp("email2","CC / 2nd Email (optional)","optional@email.com")}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8}}>
+            {inp("phone","Phone","+65 ...")}
+            <div>
+              <label style={sL}>Reference No.</label>
+              <div style={{display:"flex",gap:5}}>
+                <input style={{flex:1,border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 10px",fontSize:13,fontFamily:T.sans,background:C.cream,color:C.ink}} value={client.ref} onChange={e=>setClient(c=>({...c,ref:e.target.value}))}/>
+                <button onClick={()=>setClient(c=>({...c,ref:genRef()}))} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"0 8px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans,whiteSpace:"nowrap"}}>New</button>
+              </div>
+            </div>
+            {inp("date","Date","")}
+            <div>
+              <label style={sL}>ID In-Charge</label>
+              <select style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 11px",fontSize:13,fontFamily:T.sans,background:C.cream,color:C.ink,boxSizing:"border-box"}}
+                value={idStaff} onChange={e=>setIdStaff(e.target.value)} disabled={isLocked}>
+                <option value="">— Select Designer —</option>
+                <option value="Tammy Vu">Tammy Vu</option>
+                <option value="Euric Ng">Euric Ng</option>
+                <option value="Dylan Lu">Dylan Lu</option>
+                <option value="Chloe">Chloe</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        {/* CONTROLS */}
+        <div style={{...card,padding:"14px 18px",marginBottom:10}}>
+          <div style={{display:"flex",gap:20,flexWrap:"wrap",alignItems:"flex-start"}}>
+            <div>
+              <label style={sL}>GST</label>
+              <div style={{fontFamily:T.sans,fontSize:12,color:gst?C.gold:C.stone,padding:"6px 10px",background:gst?C.ink:C.creamD,borderRadius:3,border:`1px solid ${gst?C.gold:C.border}`}}>{gst?"GST 9% — auto":"Non-GST"}</div>
+            </div>
+            <div style={{flex:1,minWidth:220}}>
+              <label style={sL}>Payment Schedule</label>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {Object.entries(PAY_PRESETS).filter(([,v])=>USER_ROLE>=v.minRole).map(([k,v])=>(
+                  <button key={k} onClick={()=>setPayKey(k)} style={{background:k===payKey&&payKey!=="custom"?C.ink:C.creamD,color:k===payKey&&payKey!=="custom"?C.gold:C.stone,border:`1px solid ${k===payKey&&payKey!=="custom"?C.gold:C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>
+                    {v.label}{v.minRole>=2&&<span style={{fontSize:8,color:C.terra,marginLeft:3}}>★</span>}
+                  </button>
+                ))}
+                {USER_ROLE>=ROLES.director&&<button onClick={()=>{setPayKey("custom");setShowCPay(true);}} style={{background:payKey==="custom"?C.ink:C.creamD,color:payKey==="custom"?C.gold:C.stone,border:`1px solid ${payKey==="custom"?C.gold:C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>Custom ★</button>}
+              </div>
+              {showCPay&&USER_ROLE>=ROLES.director&&(
+                <div style={{background:C.creamW,border:`1px solid ${C.border}`,borderRadius:3,padding:"10px",marginTop:6}}>
+                  {customPay.map((p,i)=>(
+                    <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+                      <input placeholder="Stage label" value={p.label} onChange={e=>setCustomPay(cp=>cp.map((x,j)=>j===i?{...x,label:e.target.value}:x))} style={{flex:1,border:`1px solid ${C.border}`,borderRadius:3,padding:"4px 7px",fontSize:11,fontFamily:T.sans,background:C.cream}}/>
+                      <input type="number" placeholder="%" value={p.pct} onChange={e=>setCustomPay(cp=>cp.map((x,j)=>j===i?{...x,pct:e.target.value}:x))} style={{width:50,border:`1px solid ${C.border}`,borderRadius:3,padding:"4px 6px",fontSize:11,fontFamily:T.sans,background:C.cream,textAlign:"center"}}/>
+                      <span style={{fontSize:10,color:C.stone}}>%</span>
+                      <button onClick={()=>setCustomPay(cp=>cp.filter((_,j)=>j!==i))} style={{background:"transparent",border:"none",color:C.danger,cursor:"pointer",fontSize:12}}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+                    <button onClick={()=>setCustomPay(cp=>[...cp,{label:"",pct:""}])} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"4px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone}}>+ Stage</button>
+                    <span style={{fontSize:10,color:cpTotal===100?C.success:C.danger}}>Total: {cpTotal}% {cpTotal===100?"✓":"≠ 100%"}</span>
+                    <button onClick={()=>setShowCPay(false)} style={{marginLeft:"auto",background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:10}}>Done</button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div>
+              <label style={{...sL,display:"flex",alignItems:"center",gap:4}}>Goodwill Discount<span style={{background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"1px 5px",fontSize:8,fontWeight:700}}>DIR</span></label>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <input type="number" min="0" placeholder="$ Amount" value={disc} onChange={e=>{setDisc(e.target.value);setDiscOk(false);}} disabled={USER_ROLE<ROLES.director||isLocked}
+                  style={{width:90,border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 8px",fontSize:13,fontFamily:T.sans,background:C.cream}}/>
+                {USER_ROLE>=ROLES.director&&!isLocked&&<Btn ch={discOk?"✓ Approved":"Approve"} onClick={()=>setDiscOk(a=>!a)} bg={discOk?C.success:C.gold} col={discOk?C.white:C.ink} sm/>}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* RUNNING TOTAL */}
+        {subtotal>0&&<div style={{background:C.ink,borderRadius:4,padding:"9px 18px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+          <span style={{fontSize:9,fontWeight:600,letterSpacing:2,color:C.stone}}>RUNNING TOTAL {gst?"(incl. GST 9%)":"(excl. GST)"}</span>
+          <span style={{fontFamily:T.serif,fontSize:24,fontWeight:300,color:C.gold}}>{fmt(total)}</span>
+        </div>}
+
+        {/* DESIGN TRADE 01 */}
+        {(()=>{
+          const psfPool=unitSqft*DESIGN_PSF_RATE;
+          const anyOn=DESIGN_ITEMS_CFG.some(i=>designOn[i.id]);
+          const tOpen=openTrades[1]!==false;
+          return(
+            <div style={card}>
+              <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white,cursor:"pointer"}} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}>
+                <div style={{display:"flex",alignItems:"center",gap:7}}>
+                  <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}/>
+                  <Toggle on={anyOn} small disabled={isLocked} onClick={()=>{if(isLocked)return;const ns={};DESIGN_ITEMS_CFG.forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
+                  <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>01</span>
+                  <span style={{fontFamily:T.serif,fontSize:15,fontWeight:300}}>Interior Design & Consultation</span>
+                  <span style={{fontSize:10,color:C.stone}}>— PSF-based fees</span>
+                </div>
+                {designSubtotal>0&&<span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(designSubtotal)}</span>}
+              </div>
+              {tOpen&&(
+                <>
+                  <div style={{padding:"8px 14px",background:"#FFFDF5",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <label style={{fontSize:11,fontWeight:600,color:C.stone,fontFamily:T.sans}}>Unit Size (sqft)</label>
+                    <input type="text" inputMode="numeric" value={unitSqft||""} placeholder="e.g. 1000"
+                      onChange={e=>{const v=parseInt(e.target.value.replace(/[^0-9]/g,""),10)||0;setUnitSqft(Math.max(0,v));}}
+                      style={{width:80,border:`1px solid ${C.gold}`,borderRadius:3,padding:"5px 8px",fontSize:13,fontFamily:T.sans,background:C.cream,textAlign:"center"}}/>
+                    <span style={{fontSize:11,color:C.stone}}>× $5 PSF = <strong style={{color:C.ink,fontFamily:T.serif}}>{fmt(psfPool)}</strong> design pool</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 90px 80px",gap:3,background:C.creamD,padding:"5px 10px"}}>
+                    {["","","SCOPE","UNIT RATE","TOTAL"].map((h,i)=>(
+                      <div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>
+                    ))}
+                  </div>
+                  {DESIGN_ITEMS_CFG.map(item=>{
+                    const on=!!designOn[item.id];
+                    const price=item.fixedPrice!==null?item.fixedPrice:Math.round(psfPool*(item.psfPct||0));
+                    return(
+                      <div key={item.id} style={{borderBottom:`1px solid #F5F0E8`,background:on?"#FFFDF8":"#fff"}}>
+                        <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 90px 80px",gap:3,padding:"7px 10px",alignItems:"start",opacity:on?1:0.5}}>
+                          <div/>
+                          <div style={{display:"flex",justifyContent:"center",paddingTop:2}}>
+                            <Toggle on={on} small disabled={isLocked} onClick={()=>{if(!isLocked)setDesignOn(d=>({...d,[item.id]:!d[item.id]}));}}/>
+                          </div>
+                          <div>
+                            <div style={{fontSize:12,fontFamily:T.sans,color:on?C.ink:C.stone,lineHeight:1.4,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                              {item.addon&&<span style={{border:`1px solid ${C.gold}`,color:C.gold,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700}}>+</span>}
+                              {item.desc}
+                              {item.psfPct&&<span title={`${(item.psfPct*100).toFixed(0)}% of design pool`} style={{fontSize:8,color:C.stone,background:C.creamD,borderRadius:2,padding:"1px 4px",cursor:"help"}}>i</span>}
+                            </div>
+                            {on&&<textarea placeholder="Notes to client..." value={notes[item.id]||""} onChange={e=>setNotes(n=>({...n,[item.id]:e.target.value}))} rows={1}
+                              style={{width:"100%",marginTop:4,border:`1px solid ${C.border}`,borderRadius:2,padding:"4px 7px",fontSize:11,fontFamily:T.sans,background:"#FAFAF8",color:C.stone,boxSizing:"border-box",resize:"vertical",minHeight:28,lineHeight:1.5,display:"block"}}/>}
+                          </div>
+                          <div style={{fontFamily:T.serif,fontSize:13,textAlign:"right",color:price>0?C.ink:C.stone,paddingTop:3}}>
+                            {price>0?fmt(price):<span style={{color:C.gold,fontSize:11}}>TBC</span>}
+                          </div>
+                          <div style={{fontFamily:T.serif,fontSize:13,color:on&&price>0?C.ink:C.border,textAlign:"right",paddingTop:3,fontWeight:on&&price>0?600:400}}>
+                            {on&&price>0?fmt(price):"—"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {designSubtotal>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"8px 14px",background:C.creamD,alignItems:"baseline"}}>
+                    <span style={{fontSize:9,fontWeight:600,letterSpacing:2,color:C.stone}}>SUBTOTAL</span>
+                    <span style={{fontFamily:T.serif,fontSize:17,fontWeight:300,color:C.gold}}>{fmt(designSubtotal)}</span>
+                  </div>}
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* TRADES 02–13 */}
+        {TRADES.filter(t=>t.id!==1).map(trade=>{
+          const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
+          const tOpen=openTrades[trade.id]!==false;
+          const tCusts=customs.filter(c=>c.tradeId===trade.id);
+          const tDupes=dupes.filter(d=>d.tradeId===trade.id);
+          const allOn=tradeOn(trade);
+          const zonesMap={};
+          if(!trade.noZone){
+            [...trade.items,...tDupes].forEach(i=>{const z=getZone(i);if(!zonesMap[z])zonesMap[z]=[];zonesMap[z].push(i);});
+            tCusts.forEach(c=>{const z=c.zone||"Whole House";if(!zonesMap[z])zonesMap[z]=[];});
+          }
+          return(
+            <div key={trade.id} style={card}>
+              <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white}}>
+                <div style={{display:"flex",alignItems:"center",gap:7}}>
+                  <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,[trade.id]:!o[trade.id]}))}/>
+                  <Toggle on={allOn} onClick={()=>{if(!isLocked)toggleTM(trade);}} small disabled={isLocked}/>
+                  <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>{trade.code}</span>
+                  <span style={{fontFamily:T.serif,fontSize:15,fontWeight:300}}>{trade.name}</span>
+                </div>
+                {tSub>0&&<span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(tSub)}</span>}
+              </div>
+              {tOpen&&(<>
+                {trade.note&&<div style={{fontSize:11,color:C.stone,padding:"0 14px 7px",fontStyle:"italic",fontFamily:T.sans}}>{trade.note}</div>}
+                <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 52px 48px 80px 44px 80px",gap:3,background:C.creamD,padding:"4px 10px"}}>
+                  {["","","ITEM","QTY","UNIT","UNIT RATE","IMG","TOTAL"].map((h,i)=>(
+                    <div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>
+                  ))}
+                </div>
+                {trade.noZone?(
+                  <>
+                    {trade.items.map(item=>{
+                      const on=isOn(item.id);const qty=parseFloat(qtys[item.id])||0;
+                      const ep=getEP(item);const zone=getZone(item);
+                      return <ItemRow key={item.id} item={item} tradeId={trade.id}
+                        isOn={on} qty={qty} ep={ep} tier={getTier(item.id)} zone={zone} img={imgs[item.id]} isLocked={isLocked} note={notes[item.id]||""}
+                        onToggle={()=>toggleItem(item.id,trade.id,zone)}
+                        onQtyChange={v=>setQtys(q=>({...q,[item.id]:v}))}
+                        onQtyBlur={v=>setQtys(q=>({...q,[item.id]:parseFloat(v)||0}))}
+                        onNote={v=>setNotes(n=>({...n,[item.id]:v}))}
+                        onTier={k=>setTiers(t=>({...t,[item.id]:getTier(item.id)===k?"base":k}))}
+                        onImg={()=>{const el=document.createElement("input");el.type="file";el.accept="image/*";el.onchange=e=>handleImg(item.id,e);el.click();}}
+                        onApprove={()=>{}}
+                        dragHandlers={pointerDragHandlers(item,trade)}
+                        dragOver={dragId&&dragTarget?.zone===getZone(item)&&dragId!==item.id}
+                        isVO={isVO} isRemoved={!!removalOn[item.id]} onRemove={()=>setRemovalOn(r=>({...r,[item.id]:!r[item.id]}))}
+                      />;
+                    })}
+                    {tCusts.map(c=>{
+                      const on=isOn(c.id);const qty=parseFloat(qtys[c.id])||1;
+                      return <ItemRow key={c.id} item={{...c}} tradeId={trade.id} isDupe={false} isCustom customObj={c}
+                        isOn={on} qty={qty} ep={c.price} tier="base" zone={c.zone} img={null} isLocked={isLocked} note={notes[c.id]||""}
+                        onToggle={()=>toggleItem(c.id,trade.id,c.zone)}
+                        onQtyChange={v=>setQtys(q=>({...q,[c.id]:v}))}
+                        onQtyBlur={v=>setQtys(q=>({...q,[c.id]:parseFloat(v)||1}))}
+                        onNote={v=>setNotes(n=>({...n,[c.id]:v}))}
+                        onTier={()=>{}}
+                        onImg={()=>{}}
+                        onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
+                        dragHandlers={{}}
+                        dragOver={false}
+                      />;
+                    })}
+                  </>
+                ):(
+                  ZONE_ORDER.filter(z=>zonesMap[z]||tCusts.some(c=>c.zone===z)).map(zone=>{
+                    const zItems=zonesMap[zone]||[];const zCusts=tCusts.filter(c=>c.zone===zone);
+                    if(!zItems.length&&!zCusts.length)return null;
+                    const zOpen=isZO(trade.id,zone);
+                    const zSub=zItems.reduce((s,i)=>{const p=i.srcId?i.price:getEP(i);return isOn(i.id)?s+(parseFloat(qtys[i.id])||0)*p:s;},0)+zCusts.filter(c=>c.approved&&isOn(c.id)).reduce((s,c)=>s+(parseFloat(qtys[c.id])||1)*c.price,0);
+                    const isDropTarget=dragId&&dragTarget?.tradeId===trade.id&&dragTarget?.zone===zone;
+                    return(
+                      <div key={zone}
+                        data-zone={zone}
+                        data-tradeid={trade.id}
+                        onPointerEnter={()=>{if(dragId)setDragTarget({tradeId:trade.id,zone});}}
+                        onPointerLeave={()=>{if(dragTarget?.zone===zone&&dragTarget?.tradeId===trade.id)setDragTarget(null);}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:isDropTarget?"#FFF8F0":C.cream,borderTop:`1px solid ${C.border}`,border:isDropTarget?`1px dashed ${C.gold}`:undefined}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <CBtn open={zOpen} onClick={()=>setOpenZones(o=>({...o,[zK(trade.id,zone)]:!isZO(trade.id,zone)}))} size={18}/>
+                            <Toggle on={zoneOn(trade,zone)} onClick={e=>{e.stopPropagation();if(!isLocked)toggleZM(trade,zone);}} small disabled={isLocked}/>
+                            <span onClick={()=>setOpenZones(o=>({...o,[zK(trade.id,zone)]:!isZO(trade.id,zone)}))} style={{fontSize:10,fontWeight:600,letterSpacing:1,color:isDropTarget?C.gold:C.stone,cursor:"pointer",userSelect:"none"}}>{zone}</span>
+                            {isDropTarget&&<span style={{fontSize:9,color:C.gold}}>↓ Drop here</span>}
+                          </div>
+                          {zSub>0&&<span style={{fontFamily:T.serif,fontSize:13,color:C.gold}}>{fmt(zSub)}</span>}
+                        </div>
+                        {zOpen&&(<>
+                          {zItems.map(item=>{
+                            const on=isOn(item.id);const qty=parseFloat(qtys[item.id])||0;
+                            const ep=item.srcId?item.price:getEP(item);
+                            return <ItemRow key={item.id} item={item} tradeId={trade.id} isDupe={!!item.srcId}
+                              isOn={on} qty={qty} ep={ep} tier={getTier(item.id)} zone={zone} img={imgs[item.id]} isLocked={isLocked} note={notes[item.id]||""}
+                              onToggle={()=>toggleItem(item.id,trade.id,zone)}
+                              onQtyChange={v=>setQtys(q=>({...q,[item.id]:v}))}
+                              onQtyBlur={v=>setQtys(q=>({...q,[item.id]:parseFloat(v)||0}))}
+                              onNote={v=>setNotes(n=>({...n,[item.id]:v}))}
+                              onTier={k=>setTiers(t=>({...t,[item.id]:getTier(item.id)===k?"base":k}))}
+                              onImg={()=>{const el=document.createElement("input");el.type="file";el.accept="image/*";el.onchange=e=>handleImg(item.id,e);el.click();}}
+                              onApprove={()=>{}}
+                              dragHandlers={!item.srcId?pointerDragHandlers(item,trade):{}}
+                              dragOver={isDropTarget&&dragId!==item.id}
+                              isVO={isVO} isRemoved={!!removalOn[item.id]} onRemove={()=>setRemovalOn(r=>({...r,[item.id]:!r[item.id]}))}
+                            />;
+                          })}
+                          {zCusts.map(c=>{
+                            const on=isOn(c.id);const qty=parseFloat(qtys[c.id])||1;
+                            return <ItemRow key={c.id} item={{...c}} tradeId={trade.id} isCustom customObj={c}
+                              isOn={on} qty={qty} ep={c.price} tier="base" zone={zone} img={null} isLocked={isLocked} note={notes[c.id]||""}
+                              onToggle={()=>toggleItem(c.id,trade.id,zone)}
+                              onQtyChange={v=>setQtys(q=>({...q,[c.id]:v}))}
+                              onQtyBlur={v=>setQtys(q=>({...q,[c.id]:parseFloat(v)||1}))}
+                              onNote={v=>setNotes(n=>({...n,[c.id]:v}))}
+                              onTier={()=>{}} onImg={()=>{}}
+                              onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
+                              dragHandlers={{}} dragOver={false}
+                            />;
+                          })}
+                        </>)}
+                      </div>
+                    );
+                  })
+                )}
+                {!isLocked&&(customForm?.tradeId===trade.id?(
+                  <div style={{padding:"10px 14px",background:"#FFF8F2",borderTop:`1px solid ${C.border}`}}>
+                    <div style={{fontSize:9,fontWeight:600,color:C.terra,marginBottom:7,fontFamily:T.sans}}>CUSTOM LINE — DIRECTOR APPROVAL REQUIRED</div>
+                    <div style={{display:"grid",gridTemplateColumns:"2fr 80px 90px 80px 56px",gap:7,marginBottom:7}}>
+                      {[["desc","Description",""],["unit","Unit",""],["zone","Zone",""],["price","Price $",""],["qty","Qty","1"]].map(([k,lbl,ph])=>(
+                        <div key={k}>
+                          <label style={{...sL,marginBottom:2}}>{lbl}</label>
+                          {k==="unit"?(
+                            <select value={customForm.unit||"LS"} onChange={e=>setCustomForm(f=>({...f,unit:e.target.value}))} style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px",fontSize:11,fontFamily:T.sans,background:C.cream}}>
+                              {UNIT_OPTIONS.map(u=><option key={u} value={u}>{u}</option>)}
+                            </select>
+                          ):k==="zone"?(
+                            <select value={customForm.zone||"Whole House"} onChange={e=>setCustomForm(f=>({...f,zone:e.target.value}))} style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px",fontSize:11,fontFamily:T.sans,background:C.cream}}>
+                              {ZONE_ORDER.map(z=><option key={z} value={z}>{z}</option>)}
+                            </select>
+                          ):(
+                            <input placeholder={ph} value={customForm[k]||""}
+                              onChange={e=>{
+                                let v=e.target.value;
+                                if(k==="desc"&&v.length===1)v=v.toUpperCase();
+                                setCustomForm(f=>({...f,[k]:v}));
+                              }}
+                              type={k==="price"||k==="qty"?"number":"text"}
+                              style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 8px",fontSize:11,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",gap:7}}>
+                      <Btn ch="Save Item" onClick={saveCustom} bg={C.terra} col={C.white} sm/>
+                      <OBtn ch="Cancel" onClick={()=>setCustomForm(null)} col={C.stone} sm/>
+                    </div>
+                  </div>
+                ):(
+                  <div style={{padding:"6px 14px",borderTop:`1px solid ${C.creamD}`}}>
+                    <button onClick={()=>setCustomForm({tradeId:trade.id,desc:"",unit:"LS",zone:"Whole House",price:"",qty:1})}
+                      style={{background:"transparent",border:`1px dashed ${C.border}`,borderRadius:3,color:C.stone,fontSize:11,cursor:"pointer",fontFamily:T.sans,padding:"4px 12px"}}>
+                      + Custom Line Item
+                    </button>
+                  </div>
+                ))}
+                {tSub>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"8px 14px",background:C.creamD,alignItems:"baseline"}}>
+                  <span style={{fontSize:9,fontWeight:600,letterSpacing:2,color:C.stone}}>SUBTOTAL</span>
+                  <span style={{fontFamily:T.serif,fontSize:17,fontWeight:300,color:C.gold}}>{fmt(tSub)}</span>
+                </div>}
+              </>)}
+            </div>
+          );
+        })}
+      </>)}
+
+      {/* PREVIEW */}
+      {step==="preview"&&(<>
+        <div className="no-print" style={{display:"flex",gap:0,marginBottom:14,borderRadius:3,overflow:"hidden",border:`1px solid ${C.border}`,width:"fit-content",flexWrap:"wrap"}}>
+          {[["quote","All Items"],["summary","Summary"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"],["sor","SOR"]].map(([k,lbl])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{background:tab===k?C.ink:C.white,color:tab===k?C.gold:C.stone,border:"none",padding:"9px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,borderRight:`1px solid ${C.border}`}}>{lbl}</button>
+          ))}
+        </div>
+
+        {/* ALL ITEMS TAB — read-only full quote view */}
+        {tab==="quote"&&(<>
+          <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"16px 20px",marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,letterSpacing:3,marginBottom:2}}>IKIGAI INTERIOR</div>
+                <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.ink,marginBottom:2}}>{client.name||"—"}{projectName&&<span style={{fontSize:13,color:C.terra,marginLeft:10,fontStyle:"italic"}}>{projectName}</span>}</div>
+                <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Ref: {client.ref} · {client.date} · {ent.label}</div>
+              </div>
+              <div style={{textAlign:"right",fontFamily:T.sans}}>
+                <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold}}>{fmt(total)}</div>
+                <div style={{fontSize:9,color:C.stone,letterSpacing:1}}>{gst?"INCL. GST 9%":"EXCL. GST"}</div>
+              </div>
+            </div>
+          </div>
+          {(()=>{
+            let itemNo=0;
+            return TRADES.map(trade=>{
+              const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
+              const designSub=trade.id===1?designSubtotal:0;
+              if(trade.id===1&&designSubtotal===0)return null;
+              if(trade.id!==1&&tSub===0)return null;
+              const activeItems=trade.id===1
+                ?DESIGN_ITEMS_CFG.filter(i=>designOn[i.id])
+                :trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0);
+              if(!activeItems.length)return null;
+              return(
+                <div key={trade.id} style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:6,overflow:"hidden"}}>
+                  <div style={{padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",background:C.creamD}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans}}>{trade.code}</span>
+                      <span style={{fontFamily:T.serif,fontSize:14,fontWeight:300}}>{trade.name}</span>
+                    </div>
+                    <span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(trade.id===1?designSubtotal:tSub)}</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",background:"#F5F0E8",padding:"4px 16px"}}>
+                    {["#","DESCRIPTION","QTY","UNIT","AMOUNT"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>)}
+                  </div>
+                  {activeItems.map(i=>{
+                    itemNo++;
+                    if(trade.id===1){
+                      const p=i.fixedPrice!==null?i.fixedPrice:Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0));
+                      return(<div key={i.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
+                        <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
+                        <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{i.desc}</div>
+                        <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>1</div>
+                        <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>LS</div>
+                        <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(p)}</div>
+                      </div>);
+                    }
+                    const qty=parseFloat(qtys[i.id])||0;
+                    const ep=getEP(i);
+                    return(<div key={i.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
+                      <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
+                      <div>
+                        <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{i.desc}</div>
+                        {notes[i.id]&&<div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2,fontStyle:"italic"}}>{notes[i.id]}</div>}
+                      </div>
+                      <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{qty}</div>
+                      <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{i.unit}</div>
+                      <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(qty*ep)}</div>
+                    </div>);
+                  })}
+                </div>
+              );
+            });
+          })()}
+          <div style={{background:C.ink,borderRadius:4,padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+            <span style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>TOTAL {gst?"(incl. GST 9%)":""}</span>
+            <span style={{fontFamily:T.serif,fontSize:24,fontWeight:300,color:C.gold}}>{fmt(total)}</span>
+          </div>
+          {/* All Items acknowledgement strip */}
+          <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
+            <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,lineHeight:1.6,flex:1}}>
+              I confirm the above scope of works is as discussed and agreed. This is for reference — binding agreement is on the Signature page.
+              <div style={{marginTop:6,fontSize:10,color:C.stone}}>Client: <strong>{client.name||"—"}</strong> · Ref: {client.ref}</div>
+            </div>
+            <div style={{minWidth:160}}>
+              <SigCanvas label="Client Initials" value={sig.allItemsCanvas||""} onChange={v=>setSig(s=>({...s,allItemsCanvas:v}))} locked={isFullyLocked}/>
+            </div>
+          </div>
+        </>)}
+
+        {/* SUMMARY TAB */}
+        {tab==="summary"&&(<>
+          <div className="print-summary" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"22px 26px",marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{fontFamily:T.serif,fontSize:13,fontWeight:300,color:C.gold,letterSpacing:4,marginBottom:2}}>IKIGAI INTERIOR</div>
+                <div style={{fontSize:8,letterSpacing:2,color:C.stone,marginBottom:8}}>QUOTATION</div>
+                <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300}}>{client.name||"—"}</div>
+                {projectName&&<div style={{fontSize:12,color:C.terra,marginTop:1,fontStyle:"italic"}}>{projectName}</div>}
+                <div style={{fontSize:12,color:C.stone,marginTop:3}}>{client.address}</div>
+                <div style={{fontSize:11,color:C.stone}}>{client.email}</div>
+                <div style={{fontSize:11,color:C.stone}}>{client.phone}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:8,letterSpacing:1.5,color:C.stone}}>REFERENCE</div>
+                <div style={{fontFamily:T.serif,fontSize:15,fontWeight:300}}>{client.ref}</div>
+                <div style={{fontSize:11,color:C.stone,marginTop:4}}>{client.date} · Valid 30 days</div>
+                <div style={{marginTop:5,display:"inline-block",background:STATUS_COL[status]+"22",border:`1px solid ${STATUS_COL[status]}`,borderRadius:3,padding:"2px 9px",fontSize:9,color:STATUS_COL[status],fontFamily:T.sans,fontWeight:600,letterSpacing:1}}>{status.toUpperCase()}</div>
+                <div style={{fontSize:9,color:C.stone,marginTop:2}}>{ent.label}</div>
+              </div>
+            </div>
+            <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.gold}33`,fontSize:10,color:C.stone,fontFamily:T.sans}}>
+              IKIGAI INTERIOR PTE LTD · UEN 202041797K · GST Reg 202041797K · Dylan Lu, Project Director · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
+            </div>
+          </div>
+
+          <div className="print-summary" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:10,overflow:"hidden"}}>
+            <div style={{padding:"12px 20px 6px",fontFamily:T.serif,fontSize:16,fontWeight:300}}>Summary of Cost</div>
+            <div style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",background:C.creamD,padding:"6px 20px"}}>
+              {["#","TRADE","AMOUNT (SGD)"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i===2?"right":"left"}}>{h}</div>)}
+            </div>
+            {designSubtotal>0&&(
+              <div style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"9px 20px",borderBottom:`1px solid #F5F0E8`}}>
+                <div style={{fontSize:10,color:C.stone}}>01</div>
+                <div>
+                  <div style={{fontSize:13}}>Interior Design & Consultation</div>
+                  <div style={{fontSize:10,color:C.stone,marginTop:2}}>{DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>i.desc).join(" · ")}</div>
+                </div>
+                <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(designSubtotal)}</div>
+              </div>
+            )}
+            {tradeSubs.filter(t=>t.sub>0).map(t=>(
+              <div key={t.id} style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"9px 20px",borderBottom:`1px solid #F5F0E8`}}>
+                <div style={{fontSize:10,color:C.stone}}>{t.code}</div>
+                <div style={{fontSize:13}}>{t.name}</div>
+                <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(t.sub)}</div>
+              </div>
+            ))}
+            <div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
+              <div/><div style={{fontSize:12,color:C.stone}}>Subtotal</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(subtotal)}</div>
+            </div>
+            {discAmt>0&&<div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
+              <div/><div style={{fontSize:12,color:C.success}}>Goodwill Discount</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.success}}>({fmt(discAmt)})</div>
+            </div>}
+            {gst&&<div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
+              <div/><div style={{fontSize:12,color:C.stone}}>GST (9%)</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(gstAmt)}</div>
+            </div>}
+            <div style={{padding:"13px 20px",background:C.ink,display:"grid",gridTemplateColumns:"44px 1fr 130px",alignItems:"baseline"}}>
+              <div/><div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>TOTAL SUM (SGD)</div>
+              <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold,textAlign:"right"}}>{fmt(total)}</div>
+            </div>
+          </div>
+
+          {/* PAYMENT SCHEDULE */}
+          <div className="print-summary" style={{background:C.ink,borderRadius:4,padding:"18px 22px",marginBottom:10}}>
+            <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:2}}>PAYMENT SCHEDULE</div>
+            <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,marginBottom:8}}>{payKey==="custom"?"Custom Schedule":PAY_PRESETS[payKey]?.label}</div>
+            {activePayItems.map((p,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #3A2E22"}}>
+                <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>{i+1}. {p.label}</div>
+                <div style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{p.pct}% — {fmt(total*(parseFloat(p.pct)||0)/100)}</div>
+              </div>
+            ))}
+            <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #3A2E22"}}>
+              <div style={{fontSize:9,color:C.stone,letterSpacing:1,marginBottom:2}}>PAYMENT DETAILS</div>
+              <div style={{fontFamily:T.serif,fontSize:14,color:"#E8E0D4"}}>IKIGAI INTERIOR PTE LTD</div>
+              <div style={{fontSize:11,color:C.stone,marginTop:2,fontFamily:T.sans}}>DBS Corporate · Acc 072-032036-0 · Swift: DBSSSGSG · PayNow UEN: 202041797K</div>
+              <div style={{fontSize:10,color:C.stone,marginTop:6,fontFamily:T.sans}}>→ See Payment tab for PayNow QR, PayPal, and payment confirmation</div>
+            </div>
+          </div>
+
+          {/* Sign block for Summary */}
+          <div className="print-summary" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"20px 24px",marginBottom:10}}>
+            <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:12,fontFamily:T.sans}}>ACKNOWLEDGEMENT — SUMMARY PAGE</div>
+            <SigCanvas label="Client Signature" value={sig.summaryCanvas} onChange={v=>setSig(s=>({...s,summaryCanvas:v}))} locked={isFullyLocked}/>
+            <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>I acknowledge the scope and cost summary above. · Ref: {client.ref}</div>
+          </div>
+        </>)}
+
+        {/* T&C TAB */}
+        {tab==="tc"&&(
+          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+            <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:5}}>Terms & Conditions</div>
+            <div style={{fontSize:10,color:C.stone,marginBottom:16,fontFamily:T.sans}}>Ref: {client.ref} · {client.name} · {client.date}</div>
+            {TC.map((t,i)=><div key={i} style={{display:"flex",gap:9,padding:"6px 0",borderBottom:`1px solid ${C.creamD}`}}><span style={{fontFamily:T.serif,fontSize:14,color:C.gold,minWidth:17,flexShrink:0}}>{i+1}.</span><span style={{fontSize:12,color:C.ink,lineHeight:1.65}}>{t}</span></div>)}
+            <div style={{fontFamily:T.serif,fontSize:17,fontWeight:300,margin:"18px 0 10px"}}>Material Quality</div>
+            {MQ.map((m,i)=><div key={i} style={{display:"flex",gap:9,padding:"5px 0",borderBottom:`1px solid ${C.creamD}`}}><span style={{fontFamily:T.serif,fontSize:14,color:C.gold,minWidth:17,flexShrink:0}}>{i+1}.</span><span style={{fontSize:12,color:C.ink,lineHeight:1.65}}>{m}</span></div>)}
+            <div style={{marginTop:20,paddingTop:14,borderTop:`1px solid ${C.border}`}}>
+              <SigCanvas label="Client Signature — T&C Acknowledgement" value={sig.tcCanvas} onChange={v=>setSig(s=>({...s,tcCanvas:v}))} locked={isFullyLocked}/>
+              <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>By signing above, I confirm I have read and understood all Terms & Conditions and Material Quality standards. · Ref: {client.ref}</div>
+            </div>
+          </div>
+        )}
+
+        {/* WARRANTY TAB */}
+        {tab==="warranty"&&(
+          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+            <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:6}}>Warranty Schedule</div>
+            <div style={{fontSize:12,color:C.stone,marginBottom:16,lineHeight:1.7,fontFamily:T.sans}}>Warranty commences after full handover or stay-in period, whichever is earlier. Covers workmanship & material integrity of contracted scope. Does not apply to misuse, third-party tampering, natural wear and tear, or unauthorised repair works.</div>
+            <div style={{borderRadius:3,overflow:"hidden",marginBottom:20}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 170px",padding:"7px 18px",background:C.ink}}>
+                {["SCOPE","WARRANTY PERIOD"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i===1?"right":"left"}}>{h}</div>)}
+              </div>
+              {WARRANTY.map((w,i)=>(
+                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 170px",padding:"11px 18px",borderBottom:`1px solid ${C.border}`,background:i%2===0?C.white:C.cream}}>
+                  <div style={{fontSize:12,color:C.ink,fontFamily:T.sans}}>{w.item}</div>
+                  <div style={{fontFamily:T.serif,fontSize:14,color:C.gold,textAlign:"right"}}>{w.years}</div>
+                </div>
+              ))}
+            </div>
+            <SigCanvas label="Client Signature — Warranty Acknowledgement" value={sig.warrantyCanvas} onChange={v=>setSig(s=>({...s,warrantyCanvas:v}))} locked={isFullyLocked}/>
+            <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>By signing above, I acknowledge the warranty terms stated. · Ref: {client.ref}</div>
+          </div>
+        )}
+
+        {/* SIGNATURE TAB */}
+        {tab==="sign"&&(
+          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+            <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:5}}>Agreement & Authorisation</div>
+            <div style={{fontSize:12,color:C.stone,marginBottom:18,lineHeight:1.7,fontFamily:T.sans}}>By executing this agreement, both parties confirm they have read, understood and agree to all terms, conditions, material quality standards and warranty schedule. This constitutes a binding contract upon dual signature.</div>
+
+            {/* Page sign status */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:20}}>
+              {[["All Items",sig.allItemsCanvas],["Summary",sig.summaryCanvas],["T&C",sig.tcCanvas],["Warranty",sig.warrantyCanvas]].map(([lbl,val])=>(
+                <div key={lbl} style={{padding:"8px 12px",borderRadius:3,border:`1px solid ${val?C.success:C.border}`,background:val?"#EAF3EA":C.creamD,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:12,color:val?C.success:C.stone}}>{val?"✓":"○"}</span>
+                  <span style={{fontSize:10,color:val?C.success:C.stone,fontFamily:T.sans,fontWeight:600}}>{lbl}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Company sign-offs */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+              {/* ID Staff */}
+              <div style={{padding:"16px",background:C.cream,borderRadius:4,border:`1px solid ${C.border}`}}>
+                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>INTERIOR DESIGNER IN-CHARGE</div>
+                <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>Name</div>
+                <input value={idStaff} onChange={e=>setIdStaff(e.target.value)} placeholder="Designer name..." disabled={isFullyLocked}
+                  style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:7,boxSizing:"border-box"}}/>
+                <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
+                <input value={sig.idDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,idDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
+                  style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:10,boxSizing:"border-box"}}/>
+                <SigCanvas label="Designer Signature" value={sig.idCanvas||""} onChange={v=>setSig(s=>({...s,idCanvas:v}))} locked={isFullyLocked}/>
+              </div>
+
+              {/* Director */}
+              <div style={{padding:"16px",background:C.cream,borderRadius:4,border:`1px solid ${C.border}`}}>
+                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>IKIGAI INTERIOR PTE LTD — PROJECT DIRECTOR</div>
+                <div style={{fontFamily:T.serif,fontSize:14,fontWeight:300,marginBottom:7,color:C.ink}}>Dylan Lu</div>
+                <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
+                <input value={sig.directorDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,directorDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
+                  style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:10,boxSizing:"border-box"}}/>
+                <SigCanvas label="Director Signature" value={sig.directorCanvas||""} onChange={v=>setSig(s=>({...s,directorCanvas:v}))} locked={isFullyLocked}/>
+              </div>
+            </div>
+
+            {/* Client sign */}
+            <div style={{padding:"16px",background:C.cream,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:12}}>
+              <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:10,fontFamily:T.sans}}>CLIENT ACKNOWLEDGEMENT & SIGNATURE</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:10}}>
+                <div>
+                  <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>Full Name</div>
+                  <input value={sig.clientName} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,clientName:e.target.value}));}} placeholder={client.name||"Full name..."} disabled={isFullyLocked}
+                    style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,boxSizing:"border-box"}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>Date</div>
+                  <input value={sig.date} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,date:e.target.value}));}} placeholder="DD Month YYYY" disabled={isFullyLocked}
+                    style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              <div onClick={()=>{if(!isFullyLocked)setSig(s=>({...s,agreed:!s.agreed}));}}
+                style={{display:"flex",gap:7,padding:"9px 11px",background:sig.agreed?"#EAF3EA":C.creamD,borderRadius:3,border:`1px solid ${sig.agreed?C.success:C.border}`,cursor:isFullyLocked?"default":"pointer",alignItems:"flex-start",marginBottom:12}}>
+                <div style={{width:15,height:15,borderRadius:2,border:`1px solid ${sig.agreed?C.success:C.border}`,background:sig.agreed?C.success:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",marginTop:1}}>
+                  {sig.agreed&&<span style={{color:"#fff",fontSize:10}}>✓</span>}
+                </div>
+                <span style={{fontSize:11,color:sig.agreed?C.success:C.stone,lineHeight:1.5,fontFamily:T.sans}}>I confirm I have read and agree to all terms, conditions, warranty and material quality standards. This forms a binding contract.</span>
+              </div>
+              <SigCanvas label="Client Signature" value={sig.clientCanvas||""} onChange={v=>setSig(s=>({...s,clientCanvas:v}))} locked={isFullyLocked}/>
+              <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Add 2nd signatory (e.g. spouse / co-owner)</span>
+                <Toggle on={!!sig.show2nd} onClick={()=>setSig(s=>({...s,show2nd:!s.show2nd}))} small/>
+              </div>
+              {sig.show2nd&&(
+                <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:10}}>
+                    <div>
+                      <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>2nd Signatory Name</div>
+                      <input value={sig.client2Name||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,client2Name:e.target.value}));}} placeholder="Full name..." disabled={isFullyLocked}
+                        style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,boxSizing:"border-box"}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>Date</div>
+                      <input value={sig.client2Date||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,client2Date:e.target.value}));}} placeholder="DD Month YYYY" disabled={isFullyLocked}
+                        style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                  <SigCanvas label="2nd Signatory Signature" value={sig.client2Canvas||""} onChange={v=>setSig(s=>({...s,client2Canvas:v}))} locked={isFullyLocked}/>
+                </div>
+              )}
+            </div>
+
+            {signedAll&&(
+              <div style={{padding:"12px 16px",background:"#EAF3EA",borderRadius:4,border:`1px solid ${C.success}`,display:"flex",alignItems:"center",gap:9}}>
+                <span style={{color:C.success,fontSize:16}}>✓</span>
+                <span style={{fontSize:12,color:C.success,fontFamily:T.sans}}>Signed by <strong>{sig.clientName}</strong>{sig.date?` on ${sig.date}`:""} · Ref: {client.ref}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {/* PAYMENT TAB */}
+        {tab==="payment"&&(()=>{
+          const designPaid=sig.paid_design;
+          const stage1Base=grandTotal*(parseFloat(activePayItems[0]?.pct)||0)/100;
+          const stage1Adjusted=designPaid?Math.max(0,stage1Base-designSubtotal):stage1Base;
+          return(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {/* Header total */}
+            <div style={{background:C.ink,borderRadius:4,padding:"20px 24px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+                <div>
+                  <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:4,fontFamily:T.sans}}>TOTAL CONTRACT SUM</div>
+                  <div style={{fontFamily:T.serif,fontSize:30,fontWeight:300,color:C.gold}}>{fmt(grandTotal)}</div>
+                  <div style={{fontSize:10,color:C.stone,marginTop:2,fontFamily:T.sans}}>Ref: {client.ref} · {client.name||"—"}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  {gst&&<div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Incl. GST 9%</div>}
+                  {usePaypal&&<div style={{fontSize:10,color:C.terra,fontFamily:T.sans}}>Incl. PayPal fee (+3.5%)</div>}
+                </div>
+              </div>
+              {/* Payment schedule table */}
+              <div style={{borderTop:"1px solid #3A2E22",paddingTop:12}}>
+                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>PAYMENT SCHEDULE — {payKey==="custom"?"CUSTOM":PAY_PRESETS[payKey]?.label?.toUpperCase()}</div>
+                {/* Design fee pre-stage */}
+                {designSubtotal>0&&(
+                  <div style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 36px",gap:8,padding:"8px 0",borderBottom:"1px solid #3A2E22",alignItems:"center"}}>
+                    <div style={{fontSize:11,color:C.gold,fontFamily:T.sans,fontWeight:600}}>D</div>
+                    <div>
+                      <div style={{fontSize:12,color:"#E8E0D4",fontFamily:T.sans}}>Design Fee — Pre-Stage 1</div>
+                      <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:1}}>To be collected before works commence. Deducted from Stage 1 upon receipt.</div>
+                    </div>
+                    <div style={{fontFamily:T.serif,fontSize:15,color:C.gold,textAlign:"right"}}>{fmt(designSubtotal)}</div>
+                    <div onClick={()=>{if(!isFullyLocked)setSig(s=>({...s,paid_design:!s.paid_design}));}}
+                      style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${designPaid?C.success:"#5A4A3A"}`,background:designPaid?C.success:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                      {designPaid&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                    </div>
+                  </div>
+                )}
+                {activePayItems.map((p,i)=>{
+                  const isPaid=sig[`paid_${i}`];
+                  const isStage1=i===0;
+                  const rawAmt=grandTotal*(parseFloat(p.pct)||0)/100;
+                  const displayAmt=isStage1&&designPaid?stage1Adjusted:rawAmt;
+                  const note=isStage1&&designSubtotal>0?(designPaid?`(Design fee ${fmt(designSubtotal)} already collected · Balance due)`:`(Design fee ${fmt(designSubtotal)} deductible upon receipt)`):"";
+                  return(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 36px",gap:8,padding:"8px 0",borderBottom:"1px solid #3A2E22",alignItems:"center"}}>
+                      <div style={{fontSize:11,color:C.gold,fontFamily:T.sans,fontWeight:600}}>{i+1}</div>
+                      <div>
+                        <div style={{fontSize:12,color:"#E8E0D4",fontFamily:T.sans}}>{p.label}</div>
+                        {note&&<div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:1}}>{note}</div>}
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontFamily:T.serif,fontSize:15,color:isPaid?C.success:C.gold}}>{fmt(displayAmt)}</div>
+                        {isStage1&&designPaid&&rawAmt!==displayAmt&&<div style={{fontSize:9,color:C.stone,fontFamily:T.sans,textDecoration:"line-through"}}>{fmt(rawAmt)}</div>}
+                        <div style={{fontSize:9,color:C.stone,fontFamily:T.sans}}>{p.pct}%</div>
+                      </div>
+                      <div onClick={()=>{if(!isFullyLocked)setSig(s=>({...s,[`paid_${i}`]:!s[`paid_${i}`]}));}}
+                        style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${isPaid?C.success:"#5A4A3A"}`,background:isPaid?C.success:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                        {isPaid&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bank Transfer */}
+            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"18px 22px"}}>
+              <div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone,marginBottom:10,fontFamily:T.sans}}>BANK TRANSFER</div>
+              <div style={{display:"grid",gridTemplateColumns:"130px 1fr",rowGap:6,columnGap:16,fontFamily:T.sans}}>
+                {[["Bank","DBS Bank Ltd"],["Account Name","Ikigai Interior Pte Ltd"],["Account No.","072-032036-0"],["Swift Code","DBSSSGSG"],["PayNow UEN","202041797K"],["Payment Ref",client.ref||"—"]].map(([k,v])=>(
+                  <React.Fragment key={k}>
+                    <div style={{fontSize:11,color:C.stone}}>{k}</div>
+                    <div style={{fontSize:13,color:C.ink,fontWeight:600}}>{v}</div>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+
+            {/* PayNow */}
+            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"18px 22px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:usePaynow?14:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{fontFamily:T.sans,fontSize:14,fontWeight:700,color:"#8B1A8B",letterSpacing:-0.5}}>PayNow</div>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color:C.ink,fontFamily:T.sans}}>Pay via PayNow</div>
+                    <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>UEN 202041797K · No surcharge</div>
+                  </div>
+                </div>
+                <Toggle on={usePaynow} onClick={()=>setUsePaynow(p=>!p)}/>
+              </div>
+              {usePaynow&&(
+                <div style={{paddingTop:14,borderTop:`1px solid ${C.border}`,display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{width:120,height:120,border:`2px solid #8B1A8B`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:"#FAF5FA",flexShrink:0}}>
+                    <div style={{textAlign:"center",padding:8}}>
+                      <div style={{fontSize:10,color:"#8B1A8B",fontFamily:T.sans,fontWeight:700,marginBottom:4}}>PAYNOW QR</div>
+                      <div style={{fontSize:8,color:C.stone,fontFamily:T.sans}}>UEN 202041797K</div>
+                      <div style={{fontSize:8,color:C.stone,fontFamily:T.sans,marginTop:2}}>Upload in Admin panel</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{fontFamily:T.serif,fontSize:17,fontWeight:300,marginBottom:5}}>Scan to pay</div>
+                    <div style={{fontSize:13,color:C.ink,fontWeight:600,fontFamily:T.sans,marginBottom:3}}>Ikigai Interior Pte Ltd</div>
+                    <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginBottom:2}}>UEN: 202041797K</div>
+                    <div style={{fontSize:11,color:C.terra,fontFamily:T.sans}}>Remarks: {client.ref||"your quote ref"}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* PayPal */}
+            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"18px 22px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:usePaypal?14:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <svg width="72" height="20" viewBox="0 0 72 20"><text x="0" y="16" fontFamily="Arial,sans-serif" fontSize="14" fontWeight="bold" fill="#003087">Pay</text><text x="26" y="16" fontFamily="Arial,sans-serif" fontSize="14" fontWeight="bold" fill="#009cde">Pal</text></svg>
+                  <div>
+                    <div style={{fontSize:12,fontWeight:600,color:C.ink,fontFamily:T.sans}}>Pay via PayPal</div>
+                    <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>3.5% surcharge · paypal.me/ikigaiinterior</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  {usePaypal&&<span style={{fontSize:11,color:C.terra,fontFamily:T.sans}}>Total: {fmt(grandTotal)}</span>}
+                  <Toggle on={usePaypal} onClick={()=>setUsePaypal(p=>!p)}/>
+                </div>
+              </div>
+              {usePaypal&&(
+                <div style={{paddingTop:14,borderTop:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginBottom:10}}>
+                    Base: {fmt(total)} + fee (3.5%): <strong style={{color:C.terra}}>{fmt(paypalFee)}</strong> = <strong style={{color:C.ink,fontFamily:T.serif}}>{fmt(grandTotal)}</strong>
+                  </div>
+                  <a href={`https://www.paypal.me/ikigaiinterior/${grandTotal.toFixed(2)}SGD`} target="_blank" rel="noopener"
+                    style={{display:"inline-block",background:"#0070ba",color:"#fff",borderRadius:20,padding:"9px 22px",fontSize:12,fontWeight:600,textDecoration:"none",fontFamily:T.sans}}>
+                    Pay {fmt(grandTotal)} via PayPal →
+                  </a>
+                </div>
+              )}
+            </div>
+
+            {/* Receipt trigger */}
+            {activePayItems.some((_,i)=>sig[`paid_${i}`])&&(
+              <a href={`mailto:${client.email||""}?cc=accounts@ikigaiinterior.com&subject=Payment Receipt — ${client.ref} — Ikigai Interior&body=Dear ${client.name||"Client"},\n\nThank you for your payment.\n\nRef: ${client.ref} · Project: ${projectName||"—"}\n\n${activePayItems.map((p,i)=>sig[`paid_${i}`]?`✓ Stage ${i+1} (${p.pct}%) — ${fmt(grandTotal*(parseFloat(p.pct)||0)/100)}`:"").filter(Boolean).join("\n")}\n\nKindly retain this as your official receipt.\n\nWarm regards,\n${idStaff||"Dylan Lu"}\nIkigai Interior Pte Ltd\nwork@ikigaiinterior.com`}
+                style={{display:"inline-block",background:C.gold,color:C.ink,borderRadius:3,padding:"10px 20px",fontSize:12,fontWeight:600,textDecoration:"none",fontFamily:T.sans}}>
+                ✉ Send Receipt to Client
+              </a>
+            )}
+          </div>
+          );
+        })()}
+
+        {/* ── SOR TAB ─────────────────────────────────────────────────────── */}
+        {tab==="sor"&&(()=>{
+          // Print styles for SOR - A4 layout
+          const sorStyle=`
+            @media print {
+              .no-print { display: none !important; }
+              .sor-page { page-break-after: always; }
+              body { background: #fff; }
+            }
+          `;
+          return(
+          <div>
+            <style>{sorStyle}</style>
+            {/* SOR Controls - no-print */}
+            <div className="no-print" style={{background:"#FFFDF5",border:`1px solid ${C.gold}44`,borderRadius:4,padding:"12px 18px",marginBottom:12,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+              <div>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone,fontFamily:T.sans,marginBottom:2}}>SCHEDULE OF RATES</div>
+                <div style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>Client-facing rate card. Shows unit rates for all items across all trades. Print or share at first appointment for SOR review.</div>
+              </div>
+              <button onClick={()=>window.print()} style={{background:C.ink,color:C.gold,border:"none",borderRadius:3,padding:"9px 18px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>🖨 Print SOR</button>
+            </div>
+
+            {/* SOR Document */}
+            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,overflow:"hidden"}}>
+              {/* HEADER */}
+              <div style={{background:C.ink,padding:"28px 32px",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <div style={{fontFamily:T.serif,fontSize:11,color:C.gold,letterSpacing:6,marginBottom:6}}>IKIGAI INTERIOR</div>
+                  <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:"#fff",marginBottom:4}}>Schedule of Rates</div>
+                  <div style={{fontSize:10,color:C.stone,letterSpacing:1,fontFamily:T.sans}}>FOR REFERENCE ONLY — SUBJECT TO FINAL QUOTATION</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:9,color:C.stone,letterSpacing:1.5,fontFamily:T.sans,marginBottom:3}}>PREPARED FOR</div>
+                  <div style={{fontFamily:T.serif,fontSize:16,fontWeight:300,color:"#fff"}}>{client.name||"—"}</div>
+                  {projectName&&<div style={{fontSize:11,color:C.terra,fontFamily:T.sans,marginTop:2,fontStyle:"italic"}}>{projectName}</div>}
+                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:4}}>{client.ref||"—"} · {client.date||todayStr()}</div>
+                  <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:2}}>{ent.label}</div>
+                </div>
+              </div>
+
+              {/* INTRO NOTE */}
+              <div style={{padding:"14px 32px",background:"#FDFBF7",borderBottom:`1px solid ${C.border}`,fontSize:11,color:C.stone,lineHeight:1.7,fontFamily:T.sans}}>
+                All rates stated are per unit and exclusive of GST unless otherwise indicated. Quantities, scope and final pricing to be confirmed in the formal quotation. Rates are subject to site conditions, material selection and project complexity.
+              </div>
+
+              {/* TRADES */}
+              {TRADES.map((trade,ti)=>{
+                // Group items by zone for zoned trades
+                const zoneGroups={};
+                if(trade.noZone){
+                  zoneGroups["_all"]=trade.items;
+                } else {
+                  trade.items.forEach(item=>{
+                    const z=item.zone||"Whole House";
+                    if(!zoneGroups[z])zoneGroups[z]=[];
+                    zoneGroups[z].push(item);
+                  });
+                }
+                return(
+                  <div key={trade.id} className="sor-page" style={{borderBottom:`2px solid ${C.border}`}}>
+                    {/* Trade header */}
+                    <div style={{background:C.creamD,padding:"10px 32px",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${C.border}`}}>
+                      <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"3px 10px",fontSize:10,fontWeight:700,fontFamily:T.sans,letterSpacing:1}}>{trade.code}</span>
+                      <span style={{fontFamily:T.serif,fontSize:16,fontWeight:300,color:C.ink}}>{trade.name}</span>
+                      {trade.note&&<span style={{fontSize:10,color:C.stone,fontFamily:T.sans,fontStyle:"italic",marginLeft:8}}>— {trade.note}</span>}
+                    </div>
+                    {/* Column headers */}
+                    <div style={{display:"grid",gridTemplateColumns:"36px 1fr 70px 100px",gap:0,padding:"5px 32px",background:"#F5F0E8"}}>
+                      {["#","DESCRIPTION","UNIT","RATE (SGD)"].map((h,i)=>(
+                        <div key={i} style={{fontSize:9,fontWeight:700,letterSpacing:1.2,color:C.stone,textAlign:i===3?"right":"left",fontFamily:T.sans}}>{h}</div>
+                      ))}
+                    </div>
+                    {/* Items */}
+                    {(()=>{
+                      let itemNo=0;
+                      const rows=[];
+                      const zones=trade.noZone?["_all"]:ZONE_ORDER.filter(z=>zoneGroups[z]);
+                      zones.forEach(zone=>{
+                        if(!trade.noZone&&zone!=="_all"){
+                          rows.push(
+                            <div key={`zh-${zone}`} style={{padding:"5px 32px 3px",background:C.cream,borderTop:`1px solid ${C.border}`}}>
+                              <span style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:C.gold,fontFamily:T.sans}}>{zone.toUpperCase()}</span>
+                            </div>
+                          );
+                        }
+                        (zoneGroups[zone]||[]).forEach(item=>{
+                          itemNo++;
+                          const ep=item.price;
+                          rows.push(
+                            <div key={item.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 70px 100px",gap:0,padding:"6px 32px",borderBottom:`1px solid #F5F0E8`,alignItems:"start",background:item.addon?"#FEFCF8":"#fff"}}>
+                              <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,paddingTop:1}}>{itemNo}</div>
+                              <div>
+                                <div style={{fontSize:12,color:C.ink,fontFamily:T.sans,lineHeight:1.45}}>
+                                  {item.addon&&<span style={{border:`1px solid ${C.gold}`,color:C.gold,borderRadius:2,padding:"0 3px",fontSize:8,fontWeight:700,marginRight:4}}>+</span>}
+                                  {item.desc}
+                                </div>
+                                {item.carpentry&&<div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:2}}>Premium ×1.15 · Luxury ×1.30 available</div>}
+                              </div>
+                              <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,paddingTop:1}}>{item.unit}</div>
+                              <div style={{fontFamily:T.serif,fontSize:13,textAlign:"right",color:ep>0?C.ink:C.stone}}>
+                                {ep>0?fmt(ep):<span style={{fontSize:10,color:C.gold}}>POA</span>}
+                              </div>
+                            </div>
+                          );
+                        });
+                      });
+                      return rows;
+                    })()}
+                  </div>
+                );
+              })}
+
+              {/* FOOTER */}
+              <div style={{padding:"20px 32px",background:C.ink,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                <div>
+                  <div style={{fontFamily:T.serif,fontSize:12,color:C.gold,letterSpacing:3,marginBottom:4}}>IKIGAI INTERIOR PTE LTD</div>
+                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>UEN 202041797K · GST Reg 202041797K</div>
+                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2}}>work@ikigaiinterior.com · +65 8188 7556 · www.ikigaiinterior.com</div>
+                  <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:2}}>Centennial Tower L18, 3 Temasek Ave, Singapore 039190</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginBottom:2}}>SCHEDULE ISSUED</div>
+                  <div style={{fontFamily:T.serif,fontSize:12,color:C.gold}}>{todayStr()}</div>
+                  <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:4}}>@ikigai_interior</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          );
+        })()}
+
+      </>)}
+      </div>
+    </div>
+  );
+}
+
+// ── APP ROOT ──────────────────────────────────────────────────────────────────
+function App(){
+  const isAdmin=window.location.search.includes("admin");
+  const[screen,setScreen]=useState(isAdmin?"admin":"list");
+  const[activeQuote,setActiveQuote]=useState(null);
+  const openQuote=q=>{setActiveQuote(q);setScreen("builder");};
+  const newQuote=()=>{const q=blankQuote();openQuote(q);};
+  const newVO=parent=>{const q=blankQuote(parent);openQuote(q);};
+  const saveQuote=data=>{
+    const versions=loadVersions();
+    const idx=versions.findIndex(v=>v.id===data.id);
+    if(idx>=0)versions[idx]=data;else versions.unshift(data);
+    saveVersions(versions);
+  };
+  const goBack=()=>{setScreen("list");setActiveQuote(null);};
+
+  if(screen==="admin")return <AdminPanel onBack={()=>setScreen("list")}/>;
+  if(screen==="builder"&&activeQuote)return <QuoteBuilder initData={activeQuote} onSave={saveQuote} onBack={goBack}/>;
+  return <VersionManager onOpen={openQuote} onNew={newQuote} onNewVO={newVO} onAdmin={()=>setScreen("admin")}/>;
+}
+
+ReactDOM.render(<App/>,document.getElementById("root"));
+</script>
+</body>
+</html>
