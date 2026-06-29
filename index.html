@@ -15,12 +15,14 @@ input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-ou
 input[type="number"]{-moz-appearance:textfield;}
 input:focus,textarea:focus,select:focus{outline:2px solid #C2A46E;outline-offset:-1px;}
 canvas{touch-action:none;}
-.print-doc{display:none;}
 @media print{
   .no-print{display:none!important;}
   body{background:#fff;}
-  .print-page{page-break-after:always;}
-  .print-doc{display:block!important;}
+  /* The live preview tab panels ARE the printed document. On screen only the
+     active tab shows (per-tab inline display); in print every .print-section is
+     revealed so a single window.print() emits items + summary + T&C + warranty. */
+  .print-section{display:block!important;page-break-after:always;}
+  .print-section:last-of-type{page-break-after:auto;}
 }
 ::-webkit-scrollbar{width:6px;}
 ::-webkit-scrollbar-track{background:#F8F4EF;}
@@ -610,7 +612,7 @@ function SigCanvas({value,onChange,label,locked}){
           style={{display:"block",width:"100%",height:80,cursor:locked?"not-allowed":"crosshair",touchAction:"none"}}
           onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
           onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
-        {!locked&&<button onClick={clear} style={{position:"absolute",top:4,right:4,background:"transparent",border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 6px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Clear</button>}
+        {!locked&&<button className="no-print" onClick={clear} style={{position:"absolute",top:4,right:4,background:"transparent",border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 6px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Clear</button>}
       </div>
     </div>
   );
@@ -1126,22 +1128,13 @@ function QuoteBuilder({initData,onSave,onBack}){
     </div>
   );
 
-  // Print — both buttons render the combined .print-doc (selected items + summary + T&C + warranty)
+  // Print — both buttons (and the browser's own Cmd+P) just call window.print().
+  // The live preview is the print surface; @media print + .print-section do the rest.
   const doPrintSummary=()=>{window.print();};
   const doFullPrint=()=>{
     if(printPin===DIRECTOR_PIN){setShowFullPrintPin(false);setPrintPin("");window.print();}
     else alert("Incorrect PIN");
   };
-  // Static signature render for the print document (canvas data-URL → image, or a blank ruled line)
-  const printSig=(val,label,note)=>(
-    <div style={{marginTop:14,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
-      <div style={{fontSize:9,letterSpacing:1.5,color:C.stone,marginBottom:4,fontFamily:T.sans}}>{label}</div>
-      {val
-        ?<img src={val} alt="signature" style={{display:"block",height:60,maxWidth:340,objectFit:"contain"}}/>
-        :<div style={{height:60,borderBottom:`1px solid ${C.border}`}}/>}
-      {note&&<div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>{note}</div>}
-    </div>
-  );
 
   // Sign document
   const signedAll=sig.summaryCanvas&&sig.tcCanvas&&sig.warrantyCanvas&&sig.clientName&&sig.agreed;
@@ -1604,10 +1597,13 @@ function QuoteBuilder({initData,onSave,onBack}){
           ))}
         </div>
 
-        {/* Live on-screen tabs — hidden in print; the combined .print-doc below is the print/PDF output */}
-        <div className="no-print">
-        {/* ALL ITEMS TAB — read-only full quote view */}
-        {tab==="quote"&&(<>
+        {/* PRINTABLE QUOTE SECTIONS — these live tab panels ARE the print output.
+            On screen only the active tab shows (inline display by tab); @media print
+            reveals every .print-section. Skipped on the SOR tab so the SOR rate-card
+            keeps its own separate print. */}
+        {tab!=="sor"&&(<>
+        {/* ALL ITEMS — selected items + subtotals */}
+        <div className="print-section" style={{display:tab==="quote"?undefined:"none"}}>
           <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"16px 20px",marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
@@ -1625,13 +1621,28 @@ function QuoteBuilder({initData,onSave,onBack}){
             let itemNo=0;
             return TRADES.map(trade=>{
               const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
-              const designSub=trade.id===1?designSubtotal:0;
               if(trade.id===1&&designSubtotal===0)return null;
               if(trade.id!==1&&tSub===0)return null;
-              const activeItems=trade.id===1
-                ?DESIGN_ITEMS_CFG.filter(i=>designOn[i.id])
-                :trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0);
-              if(!activeItems.length)return null;
+              // Selected rows for this trade — catalog items + dupes + approved customs,
+              // mirroring the tradeSubs math so no selected line is dropped from print.
+              let rows;
+              if(trade.id===1){
+                rows=DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>({
+                  id:i.id,desc:i.desc,qty:"1",unit:"LS",note:"",
+                  amount:i.fixedPrice!==null?i.fixedPrice:Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0))}));
+              }else{
+                const base=trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0).map(i=>({
+                  id:i.id,desc:i.desc,qty:parseFloat(qtys[i.id])||0,unit:i.unit,note:notes[i.id]||"",
+                  amount:(parseFloat(qtys[i.id])||0)*getEP(i)}));
+                const dup=dupes.filter(d=>d.tradeId===trade.id&&isOn(d.id)&&(parseFloat(qtys[d.id])||0)>0).map(d=>({
+                  id:d.id,desc:d.desc,qty:parseFloat(qtys[d.id])||0,unit:d.unit||"LS",note:notes[d.id]||"",
+                  amount:(parseFloat(qtys[d.id])||0)*d.price}));
+                const cus=customs.filter(c=>c.tradeId===trade.id&&c.approved&&isOn(c.id)).map(c=>({
+                  id:c.id,desc:c.desc,qty:parseFloat(qtys[c.id])||1,unit:c.unit||"LS",note:notes[c.id]||"",
+                  amount:(parseFloat(qtys[c.id])||1)*c.price}));
+                rows=[...base,...dup,...cus];
+              }
+              if(!rows.length)return null;
               return(
                 <div key={trade.id} style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:6,overflow:"hidden"}}>
                   <div style={{padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",background:C.creamD}}>
@@ -1644,29 +1655,17 @@ function QuoteBuilder({initData,onSave,onBack}){
                   <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",background:"#F5F0E8",padding:"4px 16px"}}>
                     {["#","DESCRIPTION","QTY","UNIT","AMOUNT"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>)}
                   </div>
-                  {activeItems.map(i=>{
+                  {rows.map(r=>{
                     itemNo++;
-                    if(trade.id===1){
-                      const p=i.fixedPrice!==null?i.fixedPrice:Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0));
-                      return(<div key={i.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
-                        <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
-                        <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{i.desc}</div>
-                        <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>1</div>
-                        <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>LS</div>
-                        <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(p)}</div>
-                      </div>);
-                    }
-                    const qty=parseFloat(qtys[i.id])||0;
-                    const ep=getEP(i);
-                    return(<div key={i.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
+                    return(<div key={r.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
                       <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
                       <div>
-                        <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{i.desc}</div>
-                        {notes[i.id]&&<div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2,fontStyle:"italic"}}>{notes[i.id]}</div>}
+                        <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{r.desc}</div>
+                        {r.note&&<div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2,fontStyle:"italic"}}>{r.note}</div>}
                       </div>
-                      <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{qty}</div>
-                      <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{i.unit}</div>
-                      <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(qty*ep)}</div>
+                      <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{r.qty}</div>
+                      <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{r.unit}</div>
+                      <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(r.amount)}</div>
                     </div>);
                   })}
                 </div>
@@ -1687,10 +1686,10 @@ function QuoteBuilder({initData,onSave,onBack}){
               <SigCanvas label="Client Initials" value={sig.allItemsCanvas||""} onChange={v=>setSig(s=>({...s,allItemsCanvas:v}))} locked={isFullyLocked}/>
             </div>
           </div>
-        </>)}
+        </div>
 
-        {/* SUMMARY TAB */}
-        {tab==="summary"&&(<>
+        {/* SUMMARY — totals + payment schedule */}
+        <div className="print-section" style={{display:tab==="summary"?undefined:"none"}}>
           <div className="print-summary" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"22px 26px",marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
@@ -1776,11 +1775,10 @@ function QuoteBuilder({initData,onSave,onBack}){
             <SigCanvas label="Client Signature" value={sig.summaryCanvas} onChange={v=>setSig(s=>({...s,summaryCanvas:v}))} locked={isFullyLocked}/>
             <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>I acknowledge the scope and cost summary above. · Ref: {client.ref}</div>
           </div>
-        </>)}
+        </div>
 
-        {/* T&C TAB */}
-        {tab==="tc"&&(
-          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+        {/* TERMS & CONDITIONS */}
+        <div className="print-section" style={{display:tab==="tc"?undefined:"none",background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
             <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:5}}>Terms & Conditions</div>
             <div style={{fontSize:10,color:C.stone,marginBottom:16,fontFamily:T.sans}}>Ref: {client.ref} · {client.name} · {client.date}</div>
             {TC.map((t,i)=><div key={i} style={{display:"flex",gap:9,padding:"6px 0",borderBottom:`1px solid ${C.creamD}`}}><span style={{fontFamily:T.serif,fontSize:14,color:C.gold,minWidth:17,flexShrink:0}}>{i+1}.</span><span style={{fontSize:12,color:C.ink,lineHeight:1.65}}>{t}</span></div>)}
@@ -1790,12 +1788,10 @@ function QuoteBuilder({initData,onSave,onBack}){
               <SigCanvas label="Client Signature — T&C Acknowledgement" value={sig.tcCanvas} onChange={v=>setSig(s=>({...s,tcCanvas:v}))} locked={isFullyLocked}/>
               <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>By signing above, I confirm I have read and understood all Terms & Conditions and Material Quality standards. · Ref: {client.ref}</div>
             </div>
-          </div>
-        )}
+        </div>
 
-        {/* WARRANTY TAB */}
-        {tab==="warranty"&&(
-          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+        {/* WARRANTY SCHEDULE */}
+        <div className="print-section" style={{display:tab==="warranty"?undefined:"none",background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
             <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:6}}>Warranty Schedule</div>
             <div style={{fontSize:12,color:C.stone,marginBottom:16,lineHeight:1.7,fontFamily:T.sans}}>Warranty commences after full handover or stay-in period, whichever is earlier. Covers workmanship & material integrity of contracted scope. Does not apply to misuse, third-party tampering, natural wear and tear, or unauthorised repair works.</div>
             <div style={{borderRadius:3,overflow:"hidden",marginBottom:20}}>
@@ -1811,12 +1807,12 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
             <SigCanvas label="Client Signature — Warranty Acknowledgement" value={sig.warrantyCanvas} onChange={v=>setSig(s=>({...s,warrantyCanvas:v}))} locked={isFullyLocked}/>
             <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>By signing above, I acknowledge the warranty terms stated. · Ref: {client.ref}</div>
-          </div>
-        )}
+        </div>
+        </>)}
 
-        {/* SIGNATURE TAB */}
+        {/* SIGNATURE TAB — on-screen only, never printed */}
         {tab==="sign"&&(
-          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+          <div className="no-print" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
             <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:5}}>Agreement & Authorisation</div>
             <div style={{fontSize:12,color:C.stone,marginBottom:18,lineHeight:1.7,fontFamily:T.sans}}>By executing this agreement, both parties confirm they have read, understood and agree to all terms, conditions, material quality standards and warranty schedule. This constitutes a binding contract upon dual signature.</div>
 
@@ -1915,7 +1911,7 @@ function QuoteBuilder({initData,onSave,onBack}){
           const stage1Base=grandTotal*(parseFloat(activePayItems[0]?.pct)||0)/100;
           const stage1Adjusted=designPaid?Math.max(0,stage1Base-designSubtotal):stage1Base;
           return(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div className="no-print" style={{display:"flex",flexDirection:"column",gap:10}}>
             {/* Header total */}
             <div style={{background:C.ink,borderRadius:4,padding:"20px 24px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
@@ -2057,7 +2053,6 @@ function QuoteBuilder({initData,onSave,onBack}){
           </div>
           );
         })()}
-        </div>{/* /live on-screen tabs */}
 
         {/* ── SOR TAB ─────────────────────────────────────────────────────── */}
         {tab==="sor"&&(()=>{
@@ -2190,200 +2185,6 @@ function QuoteBuilder({initData,onSave,onBack}){
           );
         })()}
 
-        {/* ════ COMBINED PRINT / PDF DOCUMENT — print-only (hidden on screen) ════
-             Order: 1) Selected line items + subtotals  2) Summary/totals
-                    3) Terms & Conditions  4) Warranty Schedule
-             Not rendered on the SOR tab so the SOR rate-card print stays intact. */}
-        {tab!=="sor"&&(
-        <div className="print-doc">
-
-          {/* ── PAGE 1 · SELECTED LINE ITEMS ─────────────────────────────── */}
-          <div className="print-page">
-            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"16px 20px",marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,letterSpacing:3,marginBottom:2}}>IKIGAI INTERIOR</div>
-                  <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.ink,marginBottom:2}}>{client.name||"—"}{projectName&&<span style={{fontSize:13,color:C.terra,marginLeft:10,fontStyle:"italic"}}>{projectName}</span>}</div>
-                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Ref: {client.ref} · {client.date} · {ent.label}</div>
-                </div>
-                <div style={{textAlign:"right",fontFamily:T.sans}}>
-                  <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold}}>{fmt(total)}</div>
-                  <div style={{fontSize:9,color:C.stone,letterSpacing:1}}>{gst?"INCL. GST 9%":"EXCL. GST"}</div>
-                </div>
-              </div>
-            </div>
-            {(()=>{
-              let itemNo=0;
-              return TRADES.map(trade=>{
-                const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
-                if(trade.id===1&&designSubtotal===0)return null;
-                if(trade.id!==1&&tSub===0)return null;
-                const activeItems=trade.id===1
-                  ?DESIGN_ITEMS_CFG.filter(i=>designOn[i.id])
-                  :trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0);
-                if(!activeItems.length)return null;
-                return(
-                  <div key={trade.id} style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:6,overflow:"hidden"}}>
-                    <div style={{padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",background:C.creamD}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans}}>{trade.code}</span>
-                        <span style={{fontFamily:T.serif,fontSize:14,fontWeight:300}}>{trade.name}</span>
-                      </div>
-                      <span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(trade.id===1?designSubtotal:tSub)}</span>
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",background:"#F5F0E8",padding:"4px 16px"}}>
-                      {["#","DESCRIPTION","QTY","UNIT","AMOUNT"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>)}
-                    </div>
-                    {activeItems.map(i=>{
-                      itemNo++;
-                      if(trade.id===1){
-                        const p=i.fixedPrice!==null?i.fixedPrice:Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0));
-                        return(<div key={i.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
-                          <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
-                          <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{i.desc}</div>
-                          <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>1</div>
-                          <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>LS</div>
-                          <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(p)}</div>
-                        </div>);
-                      }
-                      const qty=parseFloat(qtys[i.id])||0;
-                      const ep=getEP(i);
-                      return(<div key={i.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
-                        <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
-                        <div>
-                          <div style={{fontSize:12,fontFamily:T.sans,color:C.ink}}>{i.desc}</div>
-                          {notes[i.id]&&<div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2,fontStyle:"italic"}}>{notes[i.id]}</div>}
-                        </div>
-                        <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{qty}</div>
-                        <div style={{textAlign:"right",fontSize:11,color:C.stone,fontFamily:T.sans}}>{i.unit}</div>
-                        <div style={{textAlign:"right",fontFamily:T.serif,fontSize:13}}>{fmt(qty*ep)}</div>
-                      </div>);
-                    })}
-                  </div>
-                );
-              });
-            })()}
-            <div style={{background:C.ink,borderRadius:4,padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
-              <span style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>TOTAL {gst?"(incl. GST 9%)":""}</span>
-              <span style={{fontFamily:T.serif,fontSize:24,fontWeight:300,color:C.gold}}>{fmt(total)}</span>
-            </div>
-          </div>
-
-          {/* ── PAGE 2 · SUMMARY / TOTALS ────────────────────────────────── */}
-          <div className="print-page">
-            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"22px 26px",marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                <div>
-                  <div style={{fontFamily:T.serif,fontSize:13,fontWeight:300,color:C.gold,letterSpacing:4,marginBottom:2}}>IKIGAI INTERIOR</div>
-                  <div style={{fontSize:8,letterSpacing:2,color:C.stone,marginBottom:8}}>QUOTATION</div>
-                  <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300}}>{client.name||"—"}</div>
-                  {projectName&&<div style={{fontSize:12,color:C.terra,marginTop:1,fontStyle:"italic"}}>{projectName}</div>}
-                  <div style={{fontSize:12,color:C.stone,marginTop:3}}>{client.address}</div>
-                  <div style={{fontSize:11,color:C.stone}}>{client.email}</div>
-                  <div style={{fontSize:11,color:C.stone}}>{client.phone}</div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:8,letterSpacing:1.5,color:C.stone}}>REFERENCE</div>
-                  <div style={{fontFamily:T.serif,fontSize:15,fontWeight:300}}>{client.ref}</div>
-                  <div style={{fontSize:11,color:C.stone,marginTop:4}}>{client.date} · Valid 30 days</div>
-                  <div style={{marginTop:5,display:"inline-block",background:STATUS_COL[status]+"22",border:`1px solid ${STATUS_COL[status]}`,borderRadius:3,padding:"2px 9px",fontSize:9,color:STATUS_COL[status],fontFamily:T.sans,fontWeight:600,letterSpacing:1}}>{status.toUpperCase()}</div>
-                  <div style={{fontSize:9,color:C.stone,marginTop:2}}>{ent.label}</div>
-                </div>
-              </div>
-              <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.gold}33`,fontSize:10,color:C.stone,fontFamily:T.sans}}>
-                IKIGAI INTERIOR PTE LTD · UEN 202041797K · GST Reg 202041797K · Dylan Lu, Project Director · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
-              </div>
-            </div>
-
-            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:10,overflow:"hidden"}}>
-              <div style={{padding:"12px 20px 6px",fontFamily:T.serif,fontSize:16,fontWeight:300}}>Summary of Cost</div>
-              <div style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",background:C.creamD,padding:"6px 20px"}}>
-                {["#","TRADE","AMOUNT (SGD)"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i===2?"right":"left"}}>{h}</div>)}
-              </div>
-              {designSubtotal>0&&(
-                <div style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"9px 20px",borderBottom:`1px solid #F5F0E8`}}>
-                  <div style={{fontSize:10,color:C.stone}}>01</div>
-                  <div>
-                    <div style={{fontSize:13}}>Interior Design & Consultation</div>
-                    <div style={{fontSize:10,color:C.stone,marginTop:2}}>{DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>i.desc).join(" · ")}</div>
-                  </div>
-                  <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(designSubtotal)}</div>
-                </div>
-              )}
-              {tradeSubs.filter(t=>t.sub>0).map(t=>(
-                <div key={t.id} style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"9px 20px",borderBottom:`1px solid #F5F0E8`}}>
-                  <div style={{fontSize:10,color:C.stone}}>{t.code}</div>
-                  <div style={{fontSize:13}}>{t.name}</div>
-                  <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(t.sub)}</div>
-                </div>
-              ))}
-              <div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
-                <div/><div style={{fontSize:12,color:C.stone}}>Subtotal</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(subtotal)}</div>
-              </div>
-              {discAmt>0&&<div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
-                <div/><div style={{fontSize:12,color:C.success}}>Goodwill Discount</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.success}}>({fmt(discAmt)})</div>
-              </div>}
-              {gst&&<div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
-                <div/><div style={{fontSize:12,color:C.stone}}>GST (9%)</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(gstAmt)}</div>
-              </div>}
-              <div style={{padding:"13px 20px",background:C.ink,display:"grid",gridTemplateColumns:"44px 1fr 130px",alignItems:"baseline"}}>
-                <div/><div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>TOTAL SUM (SGD)</div>
-                <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold,textAlign:"right"}}>{fmt(total)}</div>
-              </div>
-            </div>
-
-            <div style={{background:C.ink,borderRadius:4,padding:"18px 22px",marginBottom:10}}>
-              <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:2}}>PAYMENT SCHEDULE</div>
-              <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,marginBottom:8}}>{payKey==="custom"?"Custom Schedule":PAY_PRESETS[payKey]?.label}</div>
-              {activePayItems.map((p,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #3A2E22"}}>
-                  <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>{i+1}. {p.label}</div>
-                  <div style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{p.pct}% — {fmt(total*(parseFloat(p.pct)||0)/100)}</div>
-                </div>
-              ))}
-              <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #3A2E22"}}>
-                <div style={{fontSize:9,color:C.stone,letterSpacing:1,marginBottom:2}}>PAYMENT DETAILS</div>
-                <div style={{fontFamily:T.serif,fontSize:14,color:"#E8E0D4"}}>IKIGAI INTERIOR PTE LTD</div>
-                <div style={{fontSize:11,color:C.stone,marginTop:2,fontFamily:T.sans}}>DBS Corporate · Acc 072-032036-0 · Swift: DBSSSGSG · PayNow UEN: 202041797K</div>
-              </div>
-            </div>
-
-            <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"20px 24px"}}>
-              <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:4,fontFamily:T.sans}}>ACKNOWLEDGEMENT — SUMMARY PAGE</div>
-              {printSig(sig.summaryCanvas,"Client Signature",`I acknowledge the scope and cost summary above. · Ref: ${client.ref}`)}
-            </div>
-          </div>
-
-          {/* ── PAGE 3 · TERMS & CONDITIONS ──────────────────────────────── */}
-          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
-            <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:5}}>Terms & Conditions</div>
-            <div style={{fontSize:10,color:C.stone,marginBottom:16,fontFamily:T.sans}}>Ref: {client.ref} · {client.name} · {client.date}</div>
-            {TC.map((t,i)=><div key={i} style={{display:"flex",gap:9,padding:"6px 0",borderBottom:`1px solid ${C.creamD}`}}><span style={{fontFamily:T.serif,fontSize:14,color:C.gold,minWidth:17,flexShrink:0}}>{i+1}.</span><span style={{fontSize:12,color:C.ink,lineHeight:1.65}}>{t}</span></div>)}
-            <div style={{fontFamily:T.serif,fontSize:17,fontWeight:300,margin:"18px 0 10px"}}>Material Quality</div>
-            {MQ.map((m,i)=><div key={i} style={{display:"flex",gap:9,padding:"5px 0",borderBottom:`1px solid ${C.creamD}`}}><span style={{fontFamily:T.serif,fontSize:14,color:C.gold,minWidth:17,flexShrink:0}}>{i+1}.</span><span style={{fontSize:12,color:C.ink,lineHeight:1.65}}>{m}</span></div>)}
-            {printSig(sig.tcCanvas,"Client Signature — T&C Acknowledgement",`By signing above, I confirm I have read and understood all Terms & Conditions and Material Quality standards. · Ref: ${client.ref}`)}
-          </div>
-
-          {/* ── PAGE 4 · WARRANTY SCHEDULE ───────────────────────────────── */}
-          <div className="print-page" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
-            <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:6}}>Warranty Schedule</div>
-            <div style={{fontSize:12,color:C.stone,marginBottom:16,lineHeight:1.7,fontFamily:T.sans}}>Warranty commences after full handover or stay-in period, whichever is earlier. Covers workmanship & material integrity of contracted scope. Does not apply to misuse, third-party tampering, natural wear and tear, or unauthorised repair works.</div>
-            <div style={{borderRadius:3,overflow:"hidden",marginBottom:20}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 170px",padding:"7px 18px",background:C.ink}}>
-                {["SCOPE","WARRANTY PERIOD"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i===1?"right":"left"}}>{h}</div>)}
-              </div>
-              {WARRANTY.map((w,i)=>(
-                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 170px",padding:"11px 18px",borderBottom:`1px solid ${C.border}`,background:i%2===0?C.white:C.cream}}>
-                  <div style={{fontSize:12,color:C.ink,fontFamily:T.sans}}>{w.item}</div>
-                  <div style={{fontFamily:T.serif,fontSize:14,color:C.gold,textAlign:"right"}}>{w.years}</div>
-                </div>
-              ))}
-            </div>
-            {printSig(sig.warrantyCanvas,"Client Signature — Warranty Acknowledgement",`By signing above, I acknowledge the warranty terms stated. · Ref: ${client.ref}`)}
-          </div>
-
-        </div>
-        )}
       </>)}
       </div>
     </div>
