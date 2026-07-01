@@ -21,17 +21,29 @@ canvas{touch-action:none;}
    topbar, edit grid, qty inputs, nav, signature/payment tabs — carries .no-print. */
 body.printing{background:#fff;}
 body.printing .no-print{display:none!important;}
-body.printing .print-section{display:block!important;page-break-after:always;}
+/* Only sections explicitly marked to print in this scope are shown; others stay hidden
+   so they never generate blank pages. Visible sections break onto their own page. */
+body.printing .print-section{display:block!important;page-break-after:always;page-break-inside:auto;border:none!important;border-radius:0!important;box-shadow:none!important;}
 body.printing .print-section:last-of-type{page-break-after:auto;}
+body.printing .print-section:empty{display:none!important;page-break-after:auto;}
+/* Summary-only scope: hide everything except the summary document */
+body.printing.summary-only .print-section{display:none!important;page-break-after:auto;}
+body.printing.summary-only .print-section.summary-doc{display:block!important;page-break-after:auto;}
+/* Keep table rows and signature blocks from splitting across a page */
+body.printing .pr-row,body.printing tr,body.printing .pr-keep{page-break-inside:avoid;}
 @media print{
   .no-print{display:none!important;}
   body{background:#fff;}
-  .print-section{display:block!important;page-break-after:always;}
+  .print-section{display:block!important;page-break-after:always;border:none!important;border-radius:0!important;box-shadow:none!important;}
   .print-section:last-of-type{page-break-after:auto;}
+  .print-section:empty{display:none!important;}
+  @page{margin:14mm;}
 }
 ::-webkit-scrollbar{width:6px;}
 ::-webkit-scrollbar-track{background:#F8F4EF;}
 ::-webkit-scrollbar-thumb{background:#E0D8CE;border-radius:3px;}
+.trade-nav::-webkit-scrollbar{height:0;width:0;display:none;}
+.trade-nav{scrollbar-width:none;-ms-overflow-style:none;}
 </style>
 </head>
 <body>
@@ -47,13 +59,15 @@ const todayStr=()=>new Date().toLocaleDateString("en-SG",{day:"2-digit",month:"l
 const genRef=()=>{const now=new Date();const yy=String(now.getFullYear()).slice(2);const mm=String(now.getMonth()+1).padStart(2,"0");const k=`cods_ref_${yy}${mm}`;const n=parseInt(localStorage.getItem(k)||"0")+1;localStorage.setItem(k,n);return`ii-${yy}${mm}${String(n).padStart(3,"0")}`;};
 
 // ── CONSTANTS ────────────────────────────────────────────────────────────────
-const ZONE_ORDER=["Entrance/Foyer","Living/Dining","Kitchen/Yard","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Balcony Main","Balcony 2","Whole House"];
+const ZONE_ORDER_DEFAULT=["Entrance/Foyer","Living/Dining","Kitchen/Yard","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Balcony Main","Balcony 2","Whole House"];
+// Trades where adding a custom zone is logical (exclude noZone trades handled separately)
+const ADDZONE_OK=[3,4,5,6,7,8,9,10,11];
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
 const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier",sub:"Non-GST",gst:false}];
 const PAY_PRESETS={standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
 const ROLES={staff:1,senior:2,director:3};
 const USER_ROLE=ROLES.director;
-const DIRECTOR_PIN="ikigai2026";
+const DIRECTOR_PIN="4";
 const WARRANTY=[{item:"Waterproofing membrane (shower area, 300–1800mm upturn)",years:"3 Years"},{item:"Carpentry & woodworks – workmanship, laminate & countertop integrity",years:"5 Years"},{item:"Aluminium works",years:"3 Years (supplier warranty)"},{item:"Vinyl flooring",years:"Up to 10 Years (supplier warranty)"},{item:"Plumbing stainless steel pipes",years:"5 Years"},{item:"Floor & wall tiles – against popping and expansion",years:"5 Years"},{item:"Electrical wiring connection and wire integrity",years:"5 Years"}];
 const TC=["The quoted amount is nett in Singapore dollars. It excludes all fittings and accessories unless otherwise specified.","The amount quoted is estimated based on floor plan dimensions. It is subject to adjustments after actual site measurements.","All designs, details, measurements and specifications are subject to modifications according to the site structure and condition.","Upon acceptance by the Client, this document will form the contract between both parties. It also acts as a Proforma Invoice for payment.","Signed agreement must commence within 6 months from the date of this agreement and no cancellation is permitted.","Any additional work/items agreed after the contract will be treated as variation orders (VO) and charged accordingly & separately.","The delivery will be planned around the agreed work schedule with Client. On completion, a joint inspection shall be conducted.","FOC items, discounts and/or refunds must be stated in writing and authorised by the Company. Verbal agreements will not be recognised.","The Client is advised to take care of their valuable items. The Company will not be responsible for any loss of valuables during the renovation period.","For every payment made by the Client, an official receipt will be issued.","We are entitled the right to suspend or stop work in the event the Client fails to pay the contract sum due.","All payments for variation orders must be fully paid before work commencement."];
 const MQ=["We provide quality materials according to the specification, design and/or layout drawing(s) confirmed by the Client.","All materials used will be delivered in new condition.","All carpentry works come in solid plywood and ABS trimmed on door edge.","All cabinet internal finish will be White PVC (unless stated) and full-height cabinet will be up to 8ft (2.44m) only.","All cabinet swing doors are equipped with soft closing device, and drawers will come with heavy-duty runners.","Tile laying will be in accordance to agreed plan and we include edging in PVC to joint the edges.","All natural materials (marble, granite, stone, timber etc.) offer no absolute uniformity in grains, colours/tone consistency and texture."];
@@ -83,7 +97,7 @@ const DEFAULT_TRADES=[
     {id:"2.6",desc:"General clean – extra trip",unit:"Trip",price:193,addon:true},
     {id:"2.7",desc:"Detail cleaning – with styling package",unit:"Trip",price:0,addon:true},
   ]},
-  {id:3,code:"03",name:"Demolition",note:"Supply labour & tools; proper disposal off-site",items:[
+  {id:3,code:"03",name:"Demolition",noZone:true,note:"Supply labour & tools; proper disposal off-site",items:[
     {id:"3.1",desc:"Concrete walls up to 9ft height – internal",unit:"ft run",price:55,zone:"Whole House"},
     {id:"3.2",desc:"Partition walls up to 9ft height – internal",unit:"ft run",price:35,zone:"Whole House"},
     {id:"3.3",desc:"Partition ceiling up to 9ft",unit:"sqft",price:2,zone:"Whole House"},
@@ -98,273 +112,136 @@ const DEFAULT_TRADES=[
     {id:"3.12",desc:"Kitchen floor & wall tiles",unit:"Lot",price:1976,zone:"Kitchen/Yard"},
     {id:"3.13",desc:"Concrete sink and stove support",unit:"Lot",price:491,zone:"Kitchen/Yard"},
     {id:"3.14",desc:"Toilet floor & wall tiles",unit:"Lot",price:954,zone:"Master Toilet"},
-    {id:"3.15",desc:"Toilet floor & wall tiles",unit:"Lot",price:954,zone:"Toilet 2"},
     {id:"3.16",desc:"Bathtub removal",unit:"Lot",price:193,zone:"Master Toilet"},
     {id:"3.17",desc:"Removal of marble or granite (additional labour)",unit:"sqft",price:3,zone:"Whole House",addon:true},
     {id:"3.18",desc:"Door frame – Timber/Metal",unit:"Lot",price:137,zone:"Whole House"},
     {id:"3.19",desc:"Door – Timber/Metal",unit:"Lot",price:137,zone:"Whole House"},
     {id:"3.20",desc:"Window + grilles",unit:"Lot",price:273,zone:"Whole House"},
   ]},
-  {id:4,code:"04",name:"Electrical",note:"Supply labour; surfaced wiring with PVC casing; ceiling <3m; Honeywell white faceplates included; light fittings excluded.",items:[
-    {id:"4.1",desc:"Lighting point – lay wire (hanging/T5/wall light/ceiling fan)",unit:"no.",price:103,zone:"Entrance/Foyer"},
-    {id:"4.2",desc:"Installation of lighting / T5 / wall light",unit:"no.",price:14,zone:"Entrance/Foyer"},
-    {id:"4.3",desc:"Installation of hanging light (normal)",unit:"no.",price:62,zone:"Entrance/Foyer"},
-    {id:"4.4",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Entrance/Foyer"},
-    {id:"4.5",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Entrance/Foyer"},
-    {id:"4.6",desc:"Supply door bell",unit:"no.",price:48,zone:"Entrance/Foyer"},
-    {id:"4.7",desc:"Door bell point – lay wire",unit:"no.",price:96,zone:"Entrance/Foyer"},
-    {id:"4.8",desc:"Installation of door bell",unit:"no.",price:14,zone:"Entrance/Foyer"},
-    {id:"4.9",desc:"Lighting point – lay wire (hanging/track/T5/wall/ceiling fan)",unit:"no.",price:103,zone:"Living/Dining"},
-    {id:"4.10",desc:"Installation of lighting / T5 / wall light",unit:"no.",price:14,zone:"Living/Dining"},
-    {id:"4.11",desc:"Installation of track light",unit:"no.",price:28,zone:"Living/Dining"},
-    {id:"4.12",desc:"Installation of hanging light (normal)",unit:"no.",price:62,zone:"Living/Dining"},
-    {id:"4.13",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Living/Dining"},
-    {id:"4.14",desc:"Installation of clothes hanger",unit:"no.",price:123,zone:"Living/Dining"},
-    {id:"4.15",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Living/Dining"},
-    {id:"4.16",desc:"LED RGB light point – lay wire & install",unit:"no.",price:178,zone:"Living/Dining"},
-    {id:"4.17",desc:"Dimmer switch – Honeywell (white)",unit:"no.",price:129,zone:"Living/Dining"},
-    {id:"4.18",desc:"2-way switch point",unit:"no.",price:164,zone:"Living/Dining"},
-    {id:"4.19",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Living/Dining"},
-    {id:"4.20",desc:"13A × 2 power point",unit:"no.",price:109,zone:"Living/Dining"},
-    {id:"4.21",desc:"Data point – Cat6",unit:"no.",price:191,zone:"Living/Dining"},
-    {id:"4.22",desc:"Data point – Cat6 A",unit:"no.",price:300,zone:"Living/Dining"},
-    {id:"4.23",desc:"Speaker point",unit:"no.",price:123,zone:"Living/Dining"},
-    {id:"4.24",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Living/Dining"},
-    {id:"4.25",desc:"Cover power wiring",unit:"no.",price:95,zone:"Living/Dining"},
-    {id:"4.26",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Kitchen/Yard"},
-    {id:"4.27",desc:"Installation of lighting / T5 / wall light",unit:"no.",price:14,zone:"Kitchen/Yard"},
-    {id:"4.28",desc:"Cooker hood point – lay wire (below 10A)",unit:"no.",price:122,zone:"Kitchen/Yard"},
-    {id:"4.29",desc:"Cooker hob point – lay wire (13A × 1)",unit:"no.",price:95,zone:"Kitchen/Yard"},
-    {id:"4.30",desc:"Microwave / oven / induction point (15A–20A)",unit:"no.",price:176,zone:"Kitchen/Yard"},
-    {id:"4.31",desc:"13A × 1 waterproof power point",unit:"no.",price:218,zone:"Kitchen/Yard"},
-    {id:"4.32",desc:"13A × 1 waterproof cover – white/transparent",unit:"no.",price:38,zone:"Kitchen/Yard"},
-    {id:"4.33",desc:"13A × 2 waterproof cover – white/transparent",unit:"no.",price:45,zone:"Kitchen/Yard"},
-    {id:"4.34",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Kitchen/Yard"},
-    {id:"4.35",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Kitchen/Yard"},
-    {id:"4.36",desc:"Wall fan point (13A × 1 power point)",unit:"no.",price:96,zone:"Kitchen/Yard"},
-    {id:"4.37",desc:"Installation of wall fan",unit:"no.",price:28,zone:"Kitchen/Yard"},
-    {id:"4.38",desc:"Lighting point – lay wire (ceiling fan/hanging/wall light)",unit:"no.",price:103,zone:"Master Bedroom"},
-    {id:"4.39",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Master Bedroom"},
-    {id:"4.40",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Master Bedroom"},
-    {id:"4.41",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Master Bedroom"},
-    {id:"4.42",desc:"LED RGB light point – lay wire & install",unit:"no.",price:178,zone:"Master Bedroom"},
-    {id:"4.43",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Master Bedroom"},
-    {id:"4.44",desc:"13A × 2 power point",unit:"no.",price:109,zone:"Master Bedroom"},
-    {id:"4.45",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Master Bedroom"},
-    {id:"4.46",desc:"Data point – Cat6",unit:"no.",price:191,zone:"Master Bedroom"},
-    {id:"4.47",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Master Bedroom"},
-    {id:"4.48",desc:"Cover power wiring",unit:"no.",price:95,zone:"Master Bedroom"},
-    {id:"4.49",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 2"},
-    {id:"4.50",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 2"},
-    {id:"4.51",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 2"},
-    {id:"4.52",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 2"},
-    {id:"4.53",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 2"},
-    {id:"4.54",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 2"},
-    {id:"4.55",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 2"},
-    {id:"4.56",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 3"},
-    {id:"4.57",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 3"},
-    {id:"4.58",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 3"},
-    {id:"4.59",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 3"},
-    {id:"4.60",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 3"},
-    {id:"4.61",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 3"},
-    {id:"4.62",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 3"},
-    {id:"4.63b",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 4"},
-    {id:"4.64b",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 4"},
-    {id:"4.65b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 4"},
-    {id:"4.66b",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 4"},
-    {id:"4.67b",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 4"},
-    {id:"4.68b",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 4"},
-    {id:"4.69b",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 4"},
-    {id:"4.70b",desc:"Lighting point – lay wire (ceiling fan/wall light)",unit:"no.",price:103,zone:"Bedroom 5"},
-    {id:"4.71b",desc:"Installation of ceiling fan",unit:"no.",price:62,zone:"Bedroom 5"},
-    {id:"4.72b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Bedroom 5"},
-    {id:"4.73b",desc:"LED light point – lay wire & install",unit:"no.",price:130,zone:"Bedroom 5"},
-    {id:"4.74b",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Bedroom 5"},
-    {id:"4.75b",desc:"15A power point (aircon)",unit:"no.",price:178,zone:"Bedroom 5"},
-    {id:"4.76b",desc:"Cover lighting switches wiring",unit:"no.",price:95,zone:"Bedroom 5"},
-    {id:"4.63",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Master Toilet"},
-    {id:"4.64",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Master Toilet"},
-    {id:"4.65",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Master Toilet"},
-    {id:"4.66",desc:"20A 2-way heater point – lay wire",unit:"no.",price:518,zone:"Master Toilet"},
-    {id:"4.67",desc:"Connection heater",unit:"no.",price:122,zone:"Master Toilet"},
-    {id:"4.68",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Master Toilet"},
-    {id:"4.69",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Master Toilet"},
-    {id:"4.70",desc:"Wall fan point (13A × 1 power point)",unit:"no.",price:96,zone:"Master Toilet"},
-    {id:"4.71",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Master Toilet"},
-    {id:"4.72",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Toilet 2"},
-    {id:"4.73",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Toilet 2"},
-    {id:"4.74",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Toilet 2"},
-    {id:"4.75",desc:"20A 2-way heater point – lay wire",unit:"no.",price:518,zone:"Toilet 2"},
-    {id:"4.76",desc:"Connection heater",unit:"no.",price:122,zone:"Toilet 2"},
-    {id:"4.77",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Toilet 2"},
-    {id:"4.78",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Toilet 2"},
-    {id:"4.79",desc:"Wall fan point (13A × 1 power point)",unit:"no.",price:96,zone:"Toilet 2"},
-    {id:"4.80",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Toilet 2"},
-    {id:"4.T3a",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Toilet 3"},
-    {id:"4.T3b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Toilet 3"},
-    {id:"4.T3c",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Toilet 3"},
-    {id:"4.T3d",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Toilet 3"},
-    {id:"4.T3e",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Toilet 3"},
-    {id:"4.T3f",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Toilet 3"},
-    {id:"4.T4a",desc:"Lighting point – lay wire",unit:"no.",price:103,zone:"Toilet 4"},
-    {id:"4.T4b",desc:"Installation of lighting / wall light",unit:"no.",price:14,zone:"Toilet 4"},
-    {id:"4.T4c",desc:"20A heater point – lay wire",unit:"no.",price:184,zone:"Toilet 4"},
-    {id:"4.T4d",desc:"Exhaust fan point – lay wire (below 10A)",unit:"no.",price:103,zone:"Toilet 4"},
-    {id:"4.T4e",desc:"Installation of exhaust fan",unit:"no.",price:35,zone:"Toilet 4"},
-    {id:"4.T4f",desc:"13A × 1 power point",unit:"no.",price:96,zone:"Toilet 4"},
-    {id:"4.81",desc:"DB Board – 3-bedder",unit:"no.",price:473,zone:"Whole House"},
-    {id:"4.82",desc:"DB Board – 4 to 5-bedder",unit:"no.",price:540,zone:"Whole House"},
-    {id:"4.83",desc:"DB Board – Penthouse/Jumbo",unit:"no.",price:675,zone:"Whole House"},
-    {id:"4.84",desc:"20A SPN isolator",unit:"no.",price:338,zone:"Whole House"},
-    {id:"4.85",desc:"32A SPN isolator",unit:"no.",price:567,zone:"Whole House"},
-    {id:"4.86",desc:"Master switch control",unit:"no.",price:176,zone:"Whole House"},
-    {id:"4.87",desc:"Opennet connection",unit:"no.",price:513,zone:"Whole House"},
-    {id:"4.88",desc:"Labour – Opennet PVC conduit",unit:"no.",price:203,zone:"Whole House"},
-    {id:"4.89",desc:"Labour – wall hacking & concealment with patch back",unit:"M",price:50,zone:"Whole House"},
-    {id:"4.90",desc:"Telephone point – Cat6",unit:"no.",price:191,zone:"Whole House"},
-    {id:"4.91",desc:"Shifting of 1-gang switch",unit:"no.",price:75,zone:"Whole House"},
-    {id:"4.92",desc:"Shifting of 2-gang switch",unit:"no.",price:115,zone:"Whole House"},
-    {id:"4.93",desc:"Shifting of 3-gang switch",unit:"no.",price:162,zone:"Whole House"},
-    {id:"4.94",desc:"Shifting of 4-gang switch",unit:"no.",price:189,zone:"Whole House"},
-    {id:"4.95",desc:"Changing of switch & socket – Honeywell (white)",unit:"no.",price:21,zone:"Whole House"},
-    {id:"4.96",desc:"Changing of 15A heater switch – Honeywell (white)",unit:"no.",price:32,zone:"Whole House"},
-    {id:"4.97",desc:"Changing of 20A heater switch – Honeywell (white)",unit:"no.",price:32,zone:"Whole House"},
-    {id:"4.98",desc:"Changing of 20A 2-way heater switch – Honeywell (white)",unit:"no.",price:76,zone:"Whole House"},
-    {id:"4.99",desc:"Changing of data Cat6 socket – Honeywell (white)",unit:"no.",price:38,zone:"Whole House"},
-    {id:"4.100",desc:"Supply labour for concealed wiring works",unit:"LS",price:0,zone:"Whole House",addon:true},
-    {id:"4.101",desc:"Lutron automation scene control (per circuit ×5)",unit:"Qty",price:1350,zone:"Whole House",addon:true},
+  {id:4,code:"04",name:"Electrical",noZone:true,note:"Supply labour; surface wiring in PVC casing where applicable; ceiling height under 3m; Honeywell white faceplates included; light fittings not supplied.",items:[
+    {id:"4.1",desc:"Lighting point — wiring to switch (suits any ceiling, wall or pendant fitting)",unit:"no.",price:103},
+    {id:"4.2",desc:"LED downlight point — wiring & fitting install",unit:"no.",price:130},
+    {id:"4.3",desc:"LED RGB strip point — wiring & driver install",unit:"no.",price:178},
+    {id:"4.4",desc:"Fitting install — surface light (client-supplied)",unit:"no.",price:14},
+    {id:"4.5",desc:"Fitting install — pendant / hanging light",unit:"no.",price:62},
+    {id:"4.6",desc:"Fitting install — track light",unit:"no.",price:28},
+    {id:"4.7",desc:"Fitting install — ceiling fan",unit:"no.",price:62},
+    {id:"4.8",desc:"Fitting install — laundry / clothes hanger",unit:"no.",price:123},
+    {id:"4.9",desc:"Ceiling-fan point — wiring to twin switch",unit:"no.",price:103},
+    {id:"4.10",desc:"Wall-fan point — 13A dedicated outlet",unit:"no.",price:96},
+    {id:"4.11",desc:"Fitting install — wall fan",unit:"no.",price:28},
+    {id:"4.12",desc:"Exhaust-fan point — wiring (below 10A)",unit:"no.",price:103},
+    {id:"4.13",desc:"Fitting install — exhaust fan",unit:"no.",price:35},
+    {id:"4.14",desc:"13A single power point",unit:"no.",price:96},
+    {id:"4.15",desc:"13A twin power point",unit:"no.",price:109},
+    {id:"4.16",desc:"13A weatherproof power point",unit:"no.",price:218},
+    {id:"4.17",desc:"15A power point — aircon",unit:"no.",price:178},
+    {id:"4.18",desc:"2-way switch point",unit:"no.",price:164},
+    {id:"4.19",desc:"Dimmer switch — Honeywell (white)",unit:"no.",price:129},
+    {id:"4.20",desc:"Data point — Cat6",unit:"no.",price:191},
+    {id:"4.21",desc:"Data point — Cat6A",unit:"no.",price:300},
+    {id:"4.22",desc:"Telephone point — Cat6",unit:"no.",price:191},
+    {id:"4.23",desc:"Speaker point",unit:"no.",price:123},
+    {id:"4.24",desc:"Cooker-hood point — wiring (below 10A)",unit:"no.",price:122},
+    {id:"4.25",desc:"Cooker-hob point — 13A dedicated outlet",unit:"no.",price:95},
+    {id:"4.26",desc:"Microwave / oven / induction point (15–20A)",unit:"no.",price:176},
+    {id:"4.27",desc:"20A heater point — wiring",unit:"no.",price:184},
+    {id:"4.28",desc:"20A 2-way heater point — wiring",unit:"no.",price:518},
+    {id:"4.29",desc:"Heater connection",unit:"no.",price:122},
+    {id:"4.30",desc:"Door-bell point — wiring",unit:"no.",price:96},
+    {id:"4.31",desc:"Supply door bell",unit:"no.",price:48},
+    {id:"4.32",desc:"Fitting install — door bell",unit:"no.",price:14},
+    {id:"4.33",desc:"Cover lighting-switch wiring",unit:"no.",price:95},
+    {id:"4.34",desc:"Cover power wiring",unit:"no.",price:95},
+    {id:"4.35",desc:"13A single weatherproof cover — white / clear",unit:"no.",price:38},
+    {id:"4.36",desc:"13A twin weatherproof cover — white / clear",unit:"no.",price:45},
+    {id:"4.37",desc:"Shifting of 1-gang switch",unit:"no.",price:75},
+    {id:"4.38",desc:"Shifting of 2-gang switch",unit:"no.",price:115},
+    {id:"4.39",desc:"Shifting of 3-gang switch",unit:"no.",price:162},
+    {id:"4.40",desc:"Shifting of 4-gang switch",unit:"no.",price:189},
+    {id:"4.41",desc:"Replace switch & socket — Honeywell (white)",unit:"no.",price:21},
+    {id:"4.42",desc:"Replace 15A heater switch — Honeywell (white)",unit:"no.",price:32},
+    {id:"4.43",desc:"Replace 20A heater switch — Honeywell (white)",unit:"no.",price:32},
+    {id:"4.44",desc:"Replace 20A 2-way heater switch — Honeywell (white)",unit:"no.",price:76},
+    {id:"4.45",desc:"Replace data Cat6 socket — Honeywell (white)",unit:"no.",price:38},
+    {id:"4.46",desc:"DB board — 3-bedder",unit:"no.",price:473},
+    {id:"4.47",desc:"DB board — 4 to 5-bedder",unit:"no.",price:540},
+    {id:"4.48",desc:"DB board — penthouse / jumbo",unit:"no.",price:675},
+    {id:"4.49",desc:"20A SPN isolator",unit:"no.",price:338},
+    {id:"4.50",desc:"32A SPN isolator",unit:"no.",price:567},
+    {id:"4.51",desc:"Master switch control",unit:"no.",price:176},
+    {id:"4.52",desc:"Opennet connection",unit:"no.",price:513},
+    {id:"4.53",desc:"Opennet PVC conduit — labour",unit:"no.",price:203},
+    {id:"4.54",desc:"Wall hacking & concealment with patch-back",unit:"M",price:50},
+    {id:"4.55",desc:"Concealed wiring works — labour",unit:"LS",price:0,poa:true},
+    {id:"4.56",desc:"Lutron automation — scene control (per circuit ×5)",unit:"Qty",price:1350},
   ]},
-  {id:5,code:"05",name:"Plumbing",note:"Supply labour only; concealed or exposed stainless steel piping c/w 5-year water leakage warranty.",items:[
-    {id:"5.WH1",desc:"Change incoming main supply pipe from outside of house",unit:"LS",price:0,zone:"Whole House"},
-    {id:"5.WH2",desc:"Replace pipe from main to toilet/kitchen valve",unit:"LS",price:0,zone:"Whole House"},
-    {id:"5.WH3",desc:"Replace stag pipe",unit:"LS",price:0,zone:"Whole House"},
-    {id:"5.WH4",desc:"Floor trap + pipe (general)",unit:"set",price:48,zone:"Whole House"},
-    {id:"5.1",desc:"Install kitchen concealed COLD pipe (sink, washing machine)",unit:"set",price:614,zone:"Kitchen/Yard"},
-    {id:"5.2",desc:"Kitchen add HOT pipe",unit:"no.",price:246,zone:"Kitchen/Yard"},
-    {id:"5.3",desc:"Kitchen sink + tap",unit:"no.",price:137,zone:"Kitchen/Yard"},
-    {id:"5.4",desc:"Washing machine outlet + tap",unit:"LS",price:69,zone:"Kitchen/Yard"},
-    {id:"5.5",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Kitchen/Yard"},
-    {id:"5.6",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Master Toilet"},
-    {id:"5.7",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Master Toilet"},
-    {id:"5.8",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Master Toilet"},
-    {id:"5.9",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Master Toilet"},
-    {id:"5.10",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Master Toilet"},
-    {id:"5.11",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Master Toilet"},
-    {id:"5.12",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Master Toilet"},
-    {id:"5.13",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Master Toilet"},
-    {id:"5.14",desc:"Toilet accessories",unit:"set",price:69,zone:"Master Toilet"},
-    {id:"5.15",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Master Toilet"},
-    {id:"5.16",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Toilet 2"},
-    {id:"5.17",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Toilet 2"},
-    {id:"5.18",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Toilet 2"},
-    {id:"5.19",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Toilet 2"},
-    {id:"5.20",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Toilet 2"},
-    {id:"5.21",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Toilet 2"},
-    {id:"5.22",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Toilet 2"},
-    {id:"5.23",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Toilet 2"},
-    {id:"5.24",desc:"Toilet accessories",unit:"set",price:69,zone:"Toilet 2"},
-    {id:"5.25",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Toilet 2"},
-    {id:"5.T3a",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Toilet 3"},
-    {id:"5.T3b",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Toilet 3"},
-    {id:"5.T3c",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Toilet 3"},
-    {id:"5.T3d",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Toilet 3"},
-    {id:"5.T3e",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Toilet 3"},
-    {id:"5.T3f",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Toilet 3"},
-    {id:"5.T3g",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Toilet 3"},
-    {id:"5.T3h",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Toilet 3"},
-    {id:"5.T3i",desc:"Toilet accessories",unit:"set",price:69,zone:"Toilet 3"},
-    {id:"5.T3j",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Toilet 3"},
-    {id:"5.T4a",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower)",unit:"set",price:1022,zone:"Toilet 4"},
-    {id:"5.T4b",desc:"Install toilet exposed pipe & sanitary ware fitting",unit:"set",price:519,zone:"Toilet 4"},
-    {id:"5.T4c",desc:"Instant/storage heater",unit:"no.",price:341,zone:"Toilet 4"},
-    {id:"5.T4d",desc:"Wash basin + tap",unit:"no.",price:109,zone:"Toilet 4"},
-    {id:"5.T4e",desc:"Toilet bowl – pedestal",unit:"no.",price:109,zone:"Toilet 4"},
-    {id:"5.T4f",desc:"Toilet bowl – wall hung",unit:"no.",price:368,zone:"Toilet 4"},
-    {id:"5.T4g",desc:"Bidet spray + valve control",unit:"set",price:28,zone:"Toilet 4"},
-    {id:"5.T4h",desc:"Shower mixer set – exposed",unit:"set",price:109,zone:"Toilet 4"},
-    {id:"5.T4i",desc:"Toilet accessories",unit:"set",price:69,zone:"Toilet 4"},
-    {id:"5.T4j",desc:"Floor trap + pipe",unit:"set",price:48,zone:"Toilet 4"},
+  {id:5,code:"05",name:"Plumbing",noZone:true,note:"Supply labour only; concealed or exposed stainless steel piping c/w 5-year water leakage warranty. Toilet lines are per set — note which bath in remarks.",items:[
+    {id:"5.WH1",desc:"Change incoming main supply pipe from outside of house",unit:"LS",price:0,poa:true},
+    {id:"5.WH2",desc:"Replace pipe from main to toilet/kitchen valve",unit:"LS",price:0,poa:true},
+    {id:"5.WH3",desc:"Replace stag pipe",unit:"LS",price:0,poa:true},
+    {id:"5.1",desc:"Install kitchen concealed COLD pipe (sink, washing machine)",unit:"set",price:614},
+    {id:"5.2",desc:"Kitchen add HOT pipe",unit:"no.",price:246},
+    {id:"5.3",desc:"Kitchen sink + tap",unit:"no.",price:137},
+    {id:"5.4",desc:"Washing machine outlet + tap",unit:"LS",price:69},
+    {id:"5.5",desc:"Install toilet concealed HOT & COLD pipe (basin, WC, bidet, shower) — per toilet",unit:"set",price:1022},
+    {id:"5.6",desc:"Install toilet exposed pipe & sanitary ware fitting — per toilet",unit:"set",price:519},
+    {id:"5.7",desc:"Instant / storage heater",unit:"no.",price:341},
+    {id:"5.8",desc:"Wash basin + tap",unit:"no.",price:109},
+    {id:"5.9",desc:"Toilet bowl – pedestal",unit:"no.",price:109},
+    {id:"5.10",desc:"Toilet bowl – wall hung",unit:"no.",price:368},
+    {id:"5.11",desc:"Bidet spray + valve control",unit:"set",price:28},
+    {id:"5.12",desc:"Shower mixer set – exposed",unit:"set",price:109},
+    {id:"5.13",desc:"Toilet accessories",unit:"set",price:69},
+    {id:"5.14",desc:"Floor trap + pipe",unit:"set",price:48},
   ]},
-  {id:6,code:"06",name:"Masonry",note:"Supply material & labour; based on 2,600mm ceiling height",items:[
-    {id:"6.1",desc:"Floor tiles & skirting — Living/General (60×60cm)",unit:"sqft",price:8,zone:"Living/Dining"},
-    {id:"6.2",desc:"Wall screeding repair to smooth finish",unit:"sqft",price:7,zone:"Living/Dining"},
-    {id:"6.3",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Master Bedroom"},
-    {id:"6.4",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 2"},
-    {id:"6.4b",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 3"},
-    {id:"6.4c",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 4"},
-    {id:"6.4d",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8,zone:"Bedroom 5"},
-    {id:"6.5",desc:"Kitchen wall tiles — backsplash",unit:"sqft",price:9,zone:"Kitchen/Yard"},
-    {id:"6.6",desc:"Kitchen floor tiles — lay/screed",unit:"sqft",price:8,zone:"Kitchen/Yard"},
-    {id:"6.7",desc:"Kitchen floor level screed (70–100mm)",unit:"sqft",price:7,zone:"Kitchen/Yard"},
-    {id:"6.8",desc:"Kitchen waterproofing (DAVCO)",unit:"LS",price:499,zone:"Kitchen/Yard"},
-    {id:"6.9",desc:"Cabinet base (per ft run)",unit:"pfr",price:32,zone:"Kitchen/Yard"},
-    {id:"6.10",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Master Toilet"},
-    {id:"6.11",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Master Toilet"},
-    {id:"6.12",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Master Toilet"},
-    {id:"6.13",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Toilet 2"},
-    {id:"6.14",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Toilet 2"},
-    {id:"6.15",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Toilet 2"},
-    {id:"6.T3a",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Toilet 3"},
-    {id:"6.T3b",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Toilet 3"},
-    {id:"6.T3c",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Toilet 3"},
-    {id:"6.T4a",desc:"Toilet wall tiles",unit:"sqft",price:9,zone:"Toilet 4"},
-    {id:"6.T4b",desc:"Toilet floor tiles",unit:"LS",price:792,zone:"Toilet 4"},
-    {id:"6.T4c",desc:"Toilet waterproofing (DAVCO)",unit:"LS",price:555,zone:"Toilet 4"},
-    {id:"6.16",desc:"Install door frame",unit:"LS",price:212,zone:"Whole House"},
-    {id:"6.17",desc:"Wall erection — hollow block with screed",unit:"PFR",price:159,zone:"Whole House"},
-    {id:"6.17a",desc:"(+) Red-brick wall",unit:"PFR",price:0,zone:"Whole House",addon:true},
-    {id:"6.17b",desc:"(+) Hollow-brick wall",unit:"PFR",price:0,zone:"Whole House",addon:true},
-    {id:"6.17c",desc:"(+) Cement board (Calcium Silicate)",unit:"PFR",price:0,zone:"Whole House",addon:true},
-    {id:"6.18",desc:"Tile skirting 60–70mm H",unit:"PFR",price:3,zone:"Whole House"},
-    {id:"6.19",desc:"Large format tile surcharge (>60×60cm / wood plank / subway)",unit:"sqft",price:2,zone:"Whole House",addon:true},
-    {id:"6.20",desc:"Edging for tiles — aluminium profile",unit:"LS",price:69,zone:"Whole House",addon:true},
-    {id:"6.21",desc:"Cutting large format tiles",unit:"sqft",price:2,zone:"Whole House",addon:true},
-    {id:"6.22",desc:"Screed floor to smooth finish",unit:"sqft",price:6,zone:"Whole House",addon:true},
-    {id:"6.23",desc:"Install bathtub with tile border",unit:"LS",price:605,zone:"Master Toilet",addon:true},
+  {id:6,code:"06",name:"Masonry",noZone:true,note:"Supply material & labour; based on 2,600mm ceiling height. Tile laying is labour + adhesive only — tiles supplied by client unless stated. Per-bedroom and per-toilet lines are per set — note which room in remarks.",items:[
+    {id:"6.1",desc:"Floor tiles & skirting — Living/General (60×60cm)",unit:"sqft",price:8},
+    {id:"6.2",desc:"Floor tiles & skirting — per bedroom",unit:"sqft",price:8},
+    {id:"6.3",desc:"Wall screeding repair to smooth finish",unit:"sqft",price:7},
+    {id:"6.4",desc:"Kitchen wall tiles — backsplash",unit:"sqft",price:9},
+    {id:"6.5",desc:"Kitchen floor tiles — lay/screed",unit:"sqft",price:8},
+    {id:"6.6",desc:"Kitchen floor level screed (70–100mm)",unit:"sqft",price:7},
+    {id:"6.7",desc:"Kitchen waterproofing (DAVCO)",unit:"LS",price:499},
+    {id:"6.8",desc:"Cabinet base (per ft run)",unit:"ft run",price:32},
+    {id:"6.9",desc:"Toilet wall tiles — per toilet",unit:"sqft",price:9},
+    {id:"6.10",desc:"Toilet floor tiles — per toilet",unit:"LS",price:792},
+    {id:"6.11",desc:"Toilet waterproofing (DAVCO) — per toilet",unit:"LS",price:555},
+    {id:"6.12",desc:"Install door frame",unit:"LS",price:212},
+    {id:"6.13",desc:"Wall erection — hollow block with screed",unit:"ft run",price:159},
+    {id:"6.13a",desc:"(+) Red-brick wall",unit:"ft run",price:0,addon:true,poa:true},
+    {id:"6.13b",desc:"(+) Hollow-brick wall",unit:"ft run",price:0,addon:true,poa:true},
+    {id:"6.13c",desc:"(+) Cement board (Calcium Silicate)",unit:"ft run",price:0,addon:true,poa:true},
+    {id:"6.14",desc:"Tile skirting 60–70mm H",unit:"ft run",price:3},
+    {id:"6.15",desc:"Large format tile surcharge (>60×60cm / wood plank / subway)",unit:"sqft",price:2,addon:true},
+    {id:"6.16",desc:"Edging for tiles — aluminium profile",unit:"LS",price:69,addon:true},
+    {id:"6.17",desc:"Cutting large format tiles",unit:"sqft",price:2,addon:true},
+    {id:"6.18",desc:"Screed floor to smooth finish",unit:"sqft",price:6},
+    {id:"6.19",desc:"Install bathtub with tile border",unit:"LS",price:605},
   ]},
-  {id:7,code:"07",name:"Flooring",items:[
-    {id:"7.1",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Living/Dining"},
-    {id:"7.2",desc:"Varnish existing parquet – clear matt melamine (<150 SF/zone)",unit:"Room",price:545,zone:"Living/Dining"},
-    {id:"7.3",desc:"Polish existing marble flooring with gum-filler",unit:"sqft",price:3,zone:"Living/Dining"},
-    {id:"7.4",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Master Bedroom"},
-    {id:"7.5",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 2"},
-    {id:"7.6",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 3"},
-    {id:"7.7",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 4"},
-    {id:"7.7b",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5,zone:"Bedroom 5"},
-    {id:"7.8",desc:"Overlap existing skirting with 100mm H timber skirting",unit:"ft run",price:5.8,zone:"Whole House"},
-    {id:"7.9",desc:"Install MDF/Timber skirting H60mm",unit:"M",price:40,zone:"Whole House",addon:true},
-    {id:"7.10",desc:"Floor protection replacement after flooring",unit:"roll",price:82,zone:"Whole House",addon:true},
+  {id:7,code:"07",name:"Flooring",noZone:true,note:"Living, dining and bedrooms. Area lines are per room/zone — note location in remarks.",items:[
+    {id:"7.1",desc:"Supply & install vinyl flooring 5mm THK incl. skirting",unit:"sqft",price:5},
+    {id:"7.2",desc:"Overlap existing skirting with 100mm H timber skirting",unit:"ft run",price:5},
+    {id:"7.3",desc:"Install MDF / timber skirting H60mm",unit:"M",price:40},
+    {id:"7.4",desc:"Varnish existing parquet – clear matt melamine (<150 SF/zone)",unit:"Room",price:545},
+    {id:"7.5",desc:"Polish existing marble flooring with gum-filler",unit:"sqft",price:3},
+    {id:"7.6",desc:"Floor protection replacement after flooring",unit:"roll",price:82},
   ]},
-  {id:8,code:"08",name:"Ceiling & Partition",note:"Supply & install drywall & ceiling",items:[
-    {id:"8.1",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Living/Dining"},
-    {id:"8.2",desc:"Construct light cove for LED strips",unit:"pfr",price:13,zone:"Living/Dining"},
-    {id:"8.3",desc:"Construct L-box (D300–450mm)",unit:"pfr",price:11,zone:"Living/Dining"},
-    {id:"8.4",desc:"Construct pelmet (H150mm)",unit:"pfr",price:10,zone:"Living/Dining"},
-    {id:"8.5",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Living/Dining"},
-    {id:"8.6",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Master Bedroom"},
-    {id:"8.7",desc:"Construct light cove for LED strips",unit:"pfr",price:13,zone:"Master Bedroom"},
-    {id:"8.8",desc:"Construct L-box (D300–450mm)",unit:"pfr",price:11,zone:"Master Bedroom"},
-    {id:"8.9",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Master Bedroom"},
-    {id:"8.10",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 2"},
-    {id:"8.11",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 2"},
-    {id:"8.12",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 3"},
-    {id:"8.13",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 3"},
-    {id:"8.13b",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 4"},
-    {id:"8.13c",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 4"},
-    {id:"8.13d",desc:"Supply & install false ceiling",unit:"sqft",price:5,zone:"Bedroom 5"},
-    {id:"8.13e",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10,zone:"Bedroom 5"},
-    {id:"8.14",desc:"Construct L-box (D300mm)",unit:"pfr",price:9,zone:"Kitchen/Yard"},
-    {id:"8.15",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Master Toilet"},
-    {id:"8.16",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Toilet 2"},
-    {id:"8.16b",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Toilet 3"},
-    {id:"8.16c",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90,zone:"Toilet 4"},
-    {id:"8.17",desc:"Install partition wall (1-sided)",unit:"sqft",price:4,zone:"Whole House"},
-    {id:"8.18",desc:"Install partition wall (2-sided)",unit:"sqft",price:5,zone:"Whole House"},
-    {id:"8.19",desc:"Install rockwool 40KG",unit:"sqft",price:1,zone:"Whole House"},
-    {id:"8.20",desc:"Install rockwool 60KG",unit:"sqft",price:1.6,zone:"Whole House"},
-    {id:"8.21",desc:"Install rockwool 80KG",unit:"sqft",price:2,zone:"Whole House"},
+  {id:8,code:"08",name:"Ceiling & Partition",noZone:true,note:"Supply & install dry wall and ceiling. Area lines are per room/zone — note location in remarks.",items:[
+    {id:"8.1",desc:"Supply & install false ceiling",unit:"sqft",price:5},
+    {id:"8.2",desc:"Construct light cove for LED strips",unit:"pfr",price:13},
+    {id:"8.3",desc:"Construct L-box (D300–450mm)",unit:"pfr",price:11},
+    {id:"8.4",desc:"Construct L-box (D300mm)",unit:"pfr",price:9},
+    {id:"8.5",desc:"Construct pelmet (H150mm)",unit:"pfr",price:10},
+    {id:"8.6",desc:"Construct aircon pelmet (H150mm)",unit:"pfr",price:10},
+    {id:"8.7",desc:"Construct access panel (450–600mm)",unit:"Qty",price:90},
+    {id:"8.8",desc:"Install partition wall (1-sided)",unit:"sqft",price:4},
+    {id:"8.9",desc:"Install partition wall (2-sided)",unit:"sqft",price:5},
+    {id:"8.10",desc:"Install rockwool 40KG",unit:"sqft",price:1},
+    {id:"8.11",desc:"Install rockwool 60KG",unit:"sqft",price:1},
+    {id:"8.12",desc:"Install rockwool 80KG",unit:"sqft",price:2},
   ]},
-  {id:9,code:"09",name:"Carpentry",note:"Solid plywood; high-pressure laminate; soft-close hinges; ABS trimmed edges.",items:[
+  {id:9,code:"09",name:"Carpentry",note:"Solid plywood; high-pressure laminate; soft-close hinges; ABS trimmed edges.",zones:["Entrance/Foyer","Living/Dining","Kitchen","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Guest Room","Master Bath","Bath 2","Balcony","Study"],items:[
     {id:"9.1",desc:"Full-height shoe cabinet (<H2900/D300mm)",unit:"ft run",price:382,zone:"Entrance/Foyer",carpentry:true},
     {id:"9.2",desc:"Settee cabinet cum storage (<H900/D600mm)",unit:"ft run",price:164,zone:"Entrance/Foyer",carpentry:true},
     {id:"9.2a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Entrance/Foyer",addon:true},
@@ -408,83 +285,82 @@ const DEFAULT_TRADES=[
     {id:"9.B4b",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Bedroom 4",carpentry:true},
     {id:"9.B4c",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 4",carpentry:true},
     {id:"9.B4d",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 4",addon:true},
-    {id:"9.B5a",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Bedroom 5",carpentry:true},
-    {id:"9.B5b",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Bedroom 5",carpentry:true},
-    {id:"9.B5c",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 5",carpentry:true},
-    {id:"9.B5d",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 5",addon:true},
-    {id:"9.30",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Master Toilet",carpentry:true},
-    {id:"9.31",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Master Toilet",carpentry:true},
-    {id:"9.31a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Master Toilet",addon:true},
-    {id:"9.31b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Master Toilet",addon:true},
-    {id:"9.32",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Toilet 2",carpentry:true},
-    {id:"9.33",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Toilet 2",carpentry:true},
-    {id:"9.33a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Toilet 2",addon:true},
-    {id:"9.33b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Toilet 2",addon:true},
-    {id:"9.T3a",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Toilet 3",carpentry:true},
-    {id:"9.T3b",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Toilet 3",carpentry:true},
-    {id:"9.T3c",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Toilet 3",addon:true},
-    {id:"9.T4a",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Toilet 4",carpentry:true},
-    {id:"9.T4b",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Toilet 4",carpentry:true},
-    {id:"9.T4c",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Toilet 4",addon:true},
-    {id:"9.34",desc:"Kitchen cabinet – casement under-counter workspace (<H920/D600mm)",unit:"ft run",price:164,zone:"Kitchen/Yard",carpentry:true},
-    {id:"9.35",desc:"Top-hung casement kitchen cabinet (<H900/D310mm)",unit:"ft run",price:164,zone:"Kitchen/Yard",carpentry:true},
-    {id:"9.36",desc:"Island kitchen with casement cabinet (<H1200/1100mm)",unit:"ft run",price:327,zone:"Kitchen/Yard",carpentry:true},
-    {id:"9.37",desc:"Full-height kitchen cabinet c/w 3-drawers (<H2900/D600mm)",unit:"ft run",price:818,zone:"Kitchen/Yard",carpentry:true},
-    {id:"9.38",desc:"Laminated frame glass door c/w aluminium dish rack & mechanical arm",unit:"LS",price:1635,zone:"Kitchen/Yard",carpentry:true},
-    {id:"9.38a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Kitchen/Yard",addon:true},
-    {id:"9.38b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Kitchen/Yard",addon:true},
-    {id:"9.39",desc:"Standard S/S dish rack (<L800mm)",unit:"Set",price:137,zone:"Kitchen/Yard",addon:true},
-    {id:"9.40",desc:"Handles design upgrade",unit:"Set",price:69,zone:"Kitchen/Yard",addon:true},
-    {id:"9.41",desc:"Drawers 60KG loading in wood carcass",unit:"Set",price:273,zone:"Kitchen/Yard",addon:true},
-    {id:"9.42",desc:"Drawers 90KG loading – mix aluminium frame",unit:"Set",price:477,zone:"Kitchen/Yard",addon:true},
-    {id:"9.43",desc:"Magic Corner 800mm depth in black metal",unit:"Set",price:1063,zone:"Kitchen/Yard",addon:true},
-    {id:"9.44",desc:"Magic Sauce pull-out L300mm depth in black metal",unit:"Set",price:1063,zone:"Kitchen/Yard",addon:true},
+    {id:"9.B5a",desc:"Full-height casement wardrobe (<H2900/D600mm)",unit:"ft run",price:382,zone:"Bedroom 4",carpentry:true},
+    {id:"9.B5b",desc:"Study table c/w drawer (<H750/D600mm)",unit:"ft run",price:191,zone:"Bedroom 4",carpentry:true},
+    {id:"9.B5c",desc:"Bedhead box-up c/w cushion",unit:"sqft",price:62,zone:"Bedroom 4",carpentry:true},
+    {id:"9.B5d",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bedroom 4",addon:true},
+    {id:"9.30",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Master Bath",carpentry:true},
+    {id:"9.31",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Master Bath",carpentry:true},
+    {id:"9.31a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Master Bath",addon:true},
+    {id:"9.31b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Master Bath",addon:true},
+    {id:"9.32",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Bath 2",carpentry:true},
+    {id:"9.33",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Bath 2",carpentry:true},
+    {id:"9.33a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bath 2",addon:true},
+    {id:"9.33b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Bath 2",addon:true},
+    {id:"9.T3a",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Bath 2",carpentry:true},
+    {id:"9.T3b",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Bath 2",carpentry:true},
+    {id:"9.T3c",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bath 2",addon:true},
+    {id:"9.T4a",desc:"Suspended vanity cabinet (<H1100/D550mm)",unit:"ft run",price:164,zone:"Bath 2",carpentry:true},
+    {id:"9.T4b",desc:"Top-hung mirror cabinet (<H1100/D200mm)",unit:"ft run",price:191,zone:"Bath 2",carpentry:true},
+    {id:"9.T4c",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Bath 2",addon:true},
+    {id:"9.34",desc:"Kitchen cabinet – casement under-counter workspace (<H920/D600mm)",unit:"ft run",price:164,zone:"Kitchen",carpentry:true},
+    {id:"9.35",desc:"Top-hung casement kitchen cabinet (<H900/D310mm)",unit:"ft run",price:164,zone:"Kitchen",carpentry:true},
+    {id:"9.36",desc:"Island kitchen with casement cabinet (<H1200/1100mm)",unit:"ft run",price:327,zone:"Kitchen",carpentry:true},
+    {id:"9.37",desc:"Full-height kitchen cabinet c/w 3-drawers (<H2900/D600mm)",unit:"ft run",price:818,zone:"Kitchen",carpentry:true},
+    {id:"9.38",desc:"Laminated frame glass door c/w aluminium dish rack & mechanical arm",unit:"LS",price:1635,zone:"Kitchen",carpentry:true},
+    {id:"9.38a",desc:"Waterproof board substrate",unit:"sqft",price:0,zone:"Kitchen",addon:true},
+    {id:"9.38b",desc:"Low formaldehyde E0/E1 board upgrade",unit:"sqft",price:0,zone:"Kitchen",addon:true},
+    {id:"9.39",desc:"Standard S/S dish rack (<L800mm)",unit:"Set",price:137,zone:"Kitchen",addon:true},
+    {id:"9.40",desc:"Handles design upgrade",unit:"Set",price:69,zone:"Kitchen",addon:true},
+    {id:"9.41",desc:"Drawers 60KG loading in wood carcass",unit:"Set",price:273,zone:"Kitchen",addon:true},
+    {id:"9.42",desc:"Drawers 90KG loading – mix aluminium frame",unit:"Set",price:477,zone:"Kitchen",addon:true},
+    {id:"9.43",desc:"Magic Corner 800mm depth in black metal",unit:"Set",price:1063,zone:"Kitchen",addon:true},
+    {id:"9.44",desc:"Magic Sauce pull-out L300mm depth in black metal",unit:"Set",price:1063,zone:"Kitchen",addon:true},
   ]},
-  {id:10,code:"10",name:"Countertop",items:[
-    {id:"10.1",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Kitchen/Yard"},
-    {id:"10.2",desc:"Quartz countertop – basic range",unit:"ft run",price:0,zone:"Kitchen/Yard",addon:true},
-    {id:"10.3",desc:"Wood top – basic range",unit:"ft run",price:0,zone:"Kitchen/Yard",addon:true},
-    {id:"10.4",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Kitchen/Yard",addon:true},
-    {id:"10.5",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Master Toilet"},
-    {id:"10.6",desc:"Quartz countertop – basic range",unit:"ft run",price:0,zone:"Master Toilet",addon:true},
-    {id:"10.7",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Master Toilet",addon:true},
-    {id:"10.8",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Toilet 2"},
-    {id:"10.9",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Toilet 2",addon:true},
-    {id:"10.T3a",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Toilet 3"},
-    {id:"10.T3b",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Toilet 3",addon:true},
-    {id:"10.T4a",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Toilet 4"},
-    {id:"10.T4b",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Toilet 4",addon:true},
+  {id:10,code:"10",name:"Countertop",zones:["Kitchen","Bathrooms"],items:[
+    {id:"10.1",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn)",unit:"ft run",price:152,zone:"Kitchen"},
+    {id:"10.1s",desc:"Sintered / Sintered Stone countertop — centred veins (POA)",unit:"ft run",price:0,zone:"Kitchen",addon:true,poa:true},
+    {id:"10.2",desc:"Quartz countertop – basic range",unit:"ft run",price:0,zone:"Kitchen",addon:true},
+    {id:"10.3",desc:"Wood top – basic range",unit:"ft run",price:0,zone:"Kitchen",addon:true},
+    {id:"10.4",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Kitchen",addon:true},
+    {id:"10.5",desc:"Engineered stone countertop (<D600mm, 40mm drop, 50mm upturn) — note bath in remarks",unit:"ft run",price:152,zone:"Bathrooms"},
+    {id:"10.6",desc:"Quartz countertop – basic range",unit:"ft run",price:0,zone:"Bathrooms",addon:true},
+    {id:"10.7",desc:"Sintered / Sintered Stone countertop — centred veins (POA)",unit:"ft run",price:0,zone:"Bathrooms",addon:true,poa:true},
+    {id:"10.8",desc:"Custom material countertop",unit:"ft run",price:137,zone:"Bathrooms",addon:true},
   ]},
-  {id:11,code:"11",name:"Glazing & Doors",note:"Costs are best estimations; to be confirmed upon site visit",items:[
-    {id:"11.1",desc:"Timber door frame (<H2250/W900mm)",unit:"LS",price:300,zone:"Whole House"},
-    {id:"11.2",desc:"Extra height for timber door frame (add <H200mm)",unit:"LS",price:60,zone:"Whole House",addon:true},
-    {id:"11.3",desc:"Timber door c/w lever lockset (<H2250/W900mm)",unit:"LS",price:614,zone:"Whole House"},
-    {id:"11.4",desc:"Extra height for timber door (add <H200mm)",unit:"LS",price:120,zone:"Whole House",addon:true},
-    {id:"11.5",desc:"Concealed door (<H2900mm) – walk-in wardrobe/MBR",unit:"LS",price:614,zone:"Master Bedroom"},
-    {id:"11.6",desc:"Aluminium glass swing door – kitchen",unit:"LS",price:488,zone:"Kitchen/Yard"},
-    {id:"11.7",desc:"Glass fixed panel to half-height partition",unit:"sqft",price:9,zone:"Whole House"},
-    {id:"11.8",desc:"Bi-fold window",unit:"LS",price:654,zone:"Whole House"},
-    {id:"11.9",desc:"Sliding glass door",unit:"sqft",price:28,zone:"Whole House"},
-    {id:"11.10",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Master Toilet"},
-    {id:"11.11",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Toilet 2"},
-    {id:"11.11b",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Toilet 3"},
-    {id:"11.11c",desc:"Top-hung flip window – bathroom",unit:"LS",price:340,zone:"Toilet 4"},
-    {id:"11.12",desc:"10mm tempered fixed & casement glass shower screen c/w magnet seal",unit:"LS",price:682,zone:"Master Toilet"},
-    {id:"11.13",desc:"10mm tempered fixed glass for shower screen",unit:"LS",price:341,zone:"Master Toilet"},
-    {id:"11.14",desc:"Sliding glass door – bathroom",unit:"sqft",price:28,zone:"Toilet 2"},
-    {id:"11.14b",desc:"Sliding glass door – bathroom",unit:"sqft",price:28,zone:"Toilet 3"},
-    {id:"11.14c",desc:"Sliding glass door – bathroom",unit:"sqft",price:28,zone:"Toilet 4"},
+  {id:11,code:"11",name:"Glazing & Doors",noZone:true,note:"Costs are best estimations; to be confirmed upon site visit. Bathroom lines are per set — note which bath in remarks.",items:[
+    {id:"11.1",desc:"Timber door frame (<H2250/W900mm)",unit:"LS",price:300},
+    {id:"11.2",desc:"Extra height for timber door frame (add <H200mm)",unit:"LS",price:60,addon:true},
+    {id:"11.3",desc:"Timber door c/w lever lockset (<H2250/W900mm)",unit:"LS",price:614},
+    {id:"11.4",desc:"Extra height for timber door (add <H200mm)",unit:"LS",price:120,addon:true},
+    {id:"11.5",desc:"Concealed door (<H2900mm) – walk-in wardrobe/MBR",unit:"LS",price:614},
+    {id:"11.6",desc:"Aluminium glass swing door – kitchen",unit:"LS",price:488},
+    {id:"11.7",desc:"Glass fixed panel to half-height partition",unit:"sqft",price:9},
+    {id:"11.8",desc:"Bi-fold window",unit:"LS",price:654},
+    {id:"11.9",desc:"Sliding glass door",unit:"sqft",price:28},
+    {id:"11.10",desc:"Top-hung flip window – bathroom",unit:"LS",price:340},
+    {id:"11.11",desc:"10mm tempered fixed & casement glass shower screen c/w magnet seal",unit:"LS",price:682},
+    {id:"11.12",desc:"10mm tempered fixed glass for shower screen",unit:"LS",price:341},
+    {id:"11.13",desc:"Sliding glass door – bathroom",unit:"sqft",price:28},
   ]},
-  {id:12,code:"12",name:"Paint & Wall Finishes",noZone:true,items:[
-    {id:"12.1",desc:"Paint walls – whole house, Nippon Vinilex 5000 (3-bedder)",unit:"LS",price:1800},
-    {id:"12.2",desc:"Paint walls – whole house, Nippon Vinilex 5000 (4-bedder)",unit:"LS",price:2657},
-    {id:"12.3",desc:"Paint walls – whole house, Nippon Vinilex 5000 (5-bedder / EA)",unit:"LS",price:3202},
-    {id:"12.4",desc:"Paint walls – whole house, Nippon Vinilex 5000 (Maisonette)",unit:"LS",price:3800},
-    {id:"12.5",desc:"Oil-based sealer (whole house)",unit:"LS",price:614},
-    {id:"12.6",desc:"Wallpaper (per roll, 10m H × 1.5m L)",unit:"Roll",price:682},
-    {id:"12.7",desc:"Acoustic wall panels",unit:"LS",price:682},
-    {id:"12.8",desc:"Fluted panels",unit:"LS",price:682},
-    {id:"12.9",desc:"Textured lime wash",unit:"LS",price:682},
+  {id:12,code:"12",name:"Paint & Wall Finishes",noZone:true,note:"Painting + wallcover works. Whole-house paint is priced by unit floor area (sqft band) — pick the band matching the unit. Nippon and Raffles share the same band pricing.",items:[
+    {id:"12.1a",desc:"Paint interior walls – whole house, Nippon Paint (< 600 sqft)",unit:"LS",price:900},
+    {id:"12.1b",desc:"Paint interior walls – whole house, Nippon Paint (< 900 sqft)",unit:"LS",price:1300},
+    {id:"12.1c",desc:"Paint interior walls – whole house, Nippon Paint (< 1100 sqft)",unit:"LS",price:1800},
+    {id:"12.1d",desc:"Paint interior walls – whole house, Nippon Paint (< 1400 sqft)",unit:"LS",price:2300},
+    {id:"12.1e",desc:"Paint interior walls – whole house, Nippon Paint (< 1900 sqft)",unit:"LS",price:3100},
+    {id:"12.2a",desc:"Paint interior walls – whole house, Raffles Paint (< 600 sqft)",unit:"LS",price:900},
+    {id:"12.2b",desc:"Paint interior walls – whole house, Raffles Paint (< 900 sqft)",unit:"LS",price:1300},
+    {id:"12.2c",desc:"Paint interior walls – whole house, Raffles Paint (< 1100 sqft)",unit:"LS",price:1800},
+    {id:"12.2d",desc:"Paint interior walls – whole house, Raffles Paint (< 1400 sqft)",unit:"LS",price:2300},
+    {id:"12.2e",desc:"Paint interior walls – whole house, Raffles Paint (< 1900 sqft)",unit:"LS",price:3100},
+    {id:"12.3",desc:"(+) Top up for premium paint range",unit:"LS",price:0,poa:true,addon:true},
+    {id:"12.4",desc:"Supply & lay oil-based sealer",unit:"LS",price:600},
+    {id:"12.5",desc:"Wallpaper (per roll, 10m H × 1.5m L)",unit:"Roll",price:682},
+    {id:"12.6",desc:"Acoustic wall panels",unit:"LS",price:682},
+    {id:"12.7",desc:"Fluted panels",unit:"LS",price:682},
+    {id:"12.8",desc:"Textured lime wash",unit:"LS",price:682},
+    {id:"12.9",desc:"Wainscoting panels (per L2m section)",unit:"Pc",price:50,addon:true},
   ]},
   {id:13,code:"13",name:"Miscellaneous",noZone:true,items:[
     {id:"13.1",desc:"Smart lock installation",unit:"no.",price:280},
@@ -495,10 +371,10 @@ const DEFAULT_TRADES=[
 ];
 
 const DESIGN_ITEMS_CFG=[
-  {id:"1.1",desc:"Design consultation & services",psfPct:0.15,fixedPrice:null},
-  {id:"1.2",desc:"Spatial planning & layout in 2D (furniture, RCP, lighting plan)",psfPct:0.25,fixedPrice:null},
-  {id:"1.3",desc:"3D design rendering & perspective drawing (3 revisions)",psfPct:0.30,fixedPrice:null},
-  {id:"1.4",desc:"Elevation drawings – carpentry",psfPct:0.30,fixedPrice:null},
+  {id:"1.1",desc:"Design consultation & services",psfPct:0.15,basis:"raw",fixedPrice:null},
+  {id:"1.2",desc:"Spatial planning & layout in 2D (furniture, RCP, lighting plan)",psfPct:0.30,basis:"pool",fixedPrice:null},
+  {id:"1.3",desc:"3D design rendering & perspective drawing (3 revisions)",psfPct:0.40,basis:"pool",fixedPrice:null},
+  {id:"1.4",desc:"Elevation drawings – carpentry",psfPct:0.30,basis:"pool",fixedPrice:null},
   {id:"1.5",desc:"Styling of interior – 2-day service",psfPct:null,fixedPrice:380},
   {id:"1.6",desc:"(+) Japandi Style Theme – with ornaments",psfPct:null,fixedPrice:500,addon:true},
   {id:"1.7",desc:"(+) Japandi + Luxury Style Theme – with ornaments",psfPct:null,fixedPrice:1000,addon:true},
@@ -628,26 +504,29 @@ const ItemRow=React.memo(function ItemRow({
   item,tradeId,isDupe,isCustom,customObj,
   isOn,qty,ep,tier,zone,img,isLocked,
   onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,
-  dragHandlers,dragOver,
+  poaUnlocked,poaEdited,poaVal,onPoaUnlock,onPoaChange,poaNeedsApp,poaApproved,
+  canReorder,onMoveUp,onMoveDown,onMoveZone,
+  dragHandlers,dragOver,flash,onDuplicate,
   isVO,isRemoved,onRemove,
 }){
   const lineT=isOn?qty*ep:0;
   return(
     <div
-      style={{borderBottom:`1px solid #F5F0E8`,background:!isOn?"#FAF7F2":qty>0?"#FFFDF8":"#fff",
+      style={{borderBottom:`1px solid #F5F0E8`,background:flash?"#FBE9CE":(!isOn?"#FAF7F2":qty>0?"#FFFDF8":"#fff"),
+        boxShadow:flash?"inset 0 0 0 2px "+C.gold:"none",transition:"background .6s ease, box-shadow .6s ease",
         opacity:dragOver?0.6:1}}>
       {/* grid: drag | toggle | desc(flex) | qty | unit | price | img | total */}
-      <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 52px 48px 80px 44px 80px",gap:3,padding:"7px 10px",alignItems:"start",opacity:isOn?1:0.5}}>
-        <div style={{color:dragHandlers?.onPointerDown?C.gold:C.border,fontSize:13,textAlign:"center",paddingTop:2,cursor:dragHandlers?.onPointerDown&&isOn&&!isLocked?"grab":"default",userSelect:"none",...(dragHandlers||{})}}
-          title={dragHandlers?.onPointerDown?"Drag to copy to another zone":""}>⠿</div>
+      <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 58px 48px 80px 78px 80px",gap:2,padding:"7px 10px",alignItems:"start",opacity:isOn?1:0.5}}>
+        <div {...(dragHandlers||{})} style={{color:dragHandlers?.draggable?C.gold:C.border,fontSize:16,textAlign:"center",paddingTop:2,cursor:dragHandlers?.draggable?"grab":"default",userSelect:"none",lineHeight:1,touchAction:"none"}}
+          title={dragHandlers?.draggable?"Drag by these dots to move this line to another zone in this trade":""}>⠿</div>
         <div style={{display:"flex",justifyContent:"center",paddingTop:2}}>
           <Toggle on={isOn} small disabled={isLocked} onClick={onToggle}/>
         </div>
         {/* DESCRIPTION — full width, wrap freely */}
         <div>
-          <div style={{fontSize:12,fontFamily:T.sans,color:isOn?C.ink:C.stone,lineHeight:1.5,wordBreak:"break-word"}}>
-            {item.addon&&<span style={{border:`1px solid ${C.gold}`,color:C.gold,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>+</span>}
-            {isDupe&&<span style={{background:C.creamD,color:C.stone,borderRadius:2,padding:"0 4px",fontSize:9,marginRight:4}}>COPY</span>}
+          <div style={{fontSize:14,fontFamily:T.sans,color:isOn?C.ink:C.stone,lineHeight:1.5,wordBreak:"break-word"}}>
+            {item.addon&&<span style={{background:`${C.gold}22`,border:`1px solid ${C.gold}`,color:C.gold,borderRadius:8,padding:"1px 8px",fontSize:9,fontWeight:700,marginRight:5,letterSpacing:0.3}}>Add-on</span>}
+            {isDupe&&<span title="Duplicated line" style={{color:C.gold,fontSize:11,marginRight:4,opacity:0.7}}>⧉</span>}
             {isCustom&&<span style={{background:C.terraPale,color:C.terra,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>CUSTOM</span>}
             {isCustom&&customObj&&!customObj.approved&&<span style={{background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>PENDING</span>}
             {isRemoved&&<span style={{background:"#8B3A3A22",color:"#8B3A3A",border:"1px solid #8B3A3A44",borderRadius:2,padding:"0 5px",fontSize:9,fontWeight:700,marginLeft:4}}>REMOVED</span>}
@@ -700,16 +579,32 @@ const ItemRow=React.memo(function ItemRow({
                 const v=parseFloat(e.target.value)||0;
                 onQtyBlur(allowDec?Math.round(v*2)/2:Math.round(v));
               }}
-              style={{width:44,border:`1px solid ${C.border}`,borderRadius:3,padding:"3px 4px",fontSize:13,textAlign:"center",background:isLocked?"#F5F0E8":C.cream,fontFamily:T.sans}}
+              style={{width:44,border:`1px solid ${C.border}`,borderRadius:3,padding:"3px 4px",fontSize:15,textAlign:"center",background:isLocked?"#F5F0E8":C.cream,fontFamily:T.sans}}
             />
             );
           })():<span style={{color:C.border,fontSize:10}}>—</span>}
         </div>
         {/* UNIT */}
-        <div style={{fontSize:10,color:C.stone,textAlign:"right",paddingTop:4,fontFamily:T.sans,wordBreak:"break-word"}}>{item.unit}</div>
-        {/* PRICE */}
-        <div style={{fontFamily:T.serif,fontSize:13,textAlign:"right",color:ep>0?C.ink:C.stone,paddingTop:4}}>
-          {ep>0?fmt(ep):<span style={{color:C.gold,fontSize:11}}>POA</span>}
+        <div style={{fontSize:12,color:C.stone,textAlign:"right",paddingTop:4,fontFamily:T.sans,wordBreak:"break-word"}}>{item.unit}</div>
+        {/* PRICE — POA: type freely; greyed + unprintable until senior/director approves */}
+        <div style={{fontFamily:T.serif,fontSize:15,textAlign:"right",color:ep>0?C.ink:C.stone,paddingTop:4}}>
+          {(item.poa||poaEdited||ep<=0)?(
+            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
+              <input type="text" inputMode="decimal" disabled={isLocked}
+                value={poaVal!==undefined&&poaVal!==null?poaVal:""}
+                placeholder="POA"
+                onChange={e=>{const v=e.target.value;if(/^\d*\.?\d{0,2}$/.test(v)||v==="")onPoaChange(v);}}
+                style={{width:74,border:`1px solid ${poaNeedsApp?C.stone:(poaApproved?C.success:C.gold)}`,borderRadius:3,padding:"3px 5px",fontSize:13,textAlign:"right",fontFamily:T.serif,background:poaNeedsApp?"#EDEAE5":C.cream,color:poaNeedsApp?C.stone:C.ink,opacity:poaNeedsApp?0.75:1}}/>
+              {poaNeedsApp?(
+                <span onClick={()=>!isLocked&&onPoaUnlock()} title="Needs senior/director approval to print"
+                  style={{fontSize:8,color:C.stone,fontWeight:700,cursor:"pointer",textDecoration:"underline dotted"}}>⏳ approve to print</span>
+              ):poaEdited?(
+                <span style={{fontSize:8,color:C.success,fontWeight:700}}>✓ approved</span>
+              ):null}
+            </div>
+          ):(
+            ep>0?fmt(ep):<span style={{color:C.gold,fontSize:13}}>POA</span>
+          )}
         </div>
         {/* IMG */}
         <div style={{textAlign:"right",paddingTop:2}}>
@@ -717,11 +612,12 @@ const ItemRow=React.memo(function ItemRow({
             <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:2}}>
               {img&&<img src={img} alt="" style={{width:20,height:20,objectFit:"cover",borderRadius:2,border:`1px solid ${C.border}`}}/>}
               <button onClick={onImg} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 5px",fontSize:9,cursor:"pointer",color:img?C.success:C.stone,fontFamily:T.sans}}>{img?"✓":"IMG"}</button>
+              {onDuplicate&&!isLocked&&<button onClick={e=>{e.stopPropagation();onDuplicate();}} title="Duplicate this line in the same zone" style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 5px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⧉</button>}
             </div>
           )}
         </div>
         {/* TOTAL */}
-        <div style={{fontFamily:T.serif,fontSize:13,color:isOn&&qty>0?C.ink:C.border,textAlign:"right",paddingTop:4}}>{isOn&&qty>0?fmt(lineT):"—"}</div>
+        <div style={{fontFamily:T.serif,fontSize:15,color:isOn&&qty>0?C.ink:C.border,textAlign:"right",paddingTop:4}}>{isOn&&qty>0?fmt(lineT):"—"}</div>
       </div>
     </div>
   );
@@ -755,7 +651,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
       <div style={{background:C.ink,padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,color:C.gold,letterSpacing:5}}>IKIGAI INTERIOR</div>
-          <div style={{fontSize:9,color:C.stone,letterSpacing:3,marginTop:2}}>CODSTUDIO — QUOTATION BUILDER v6.4</div>
+          <div style={{fontSize:9,color:C.stone,letterSpacing:3,marginTop:2}}>CODSTUDIO — QUOTATION BUILDER v6.5</div>
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={onAdmin} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⚙ Admin</button>
@@ -992,8 +888,75 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[showEmail,setShowEmail]=useState(false);
   const[showFullPrintPin,setShowFullPrintPin]=useState(false);
   const[printPin,setPrintPin]=useState("");
+  const[poaPrices,setPoaPrices]=useState(initData.poaPrices||{});
+  const[poaUnlocked,setPoaUnlocked]=useState(true);// POA fields are always editable now; approval is the gate
+  const[poaApproved,setPoaApproved]=useState(initData.poaApproved||{});// {itemId:true} once senior/director approves
+  const[poaPinPrompt,setPoaPinPrompt]=useState(null);
+  const[poaPinBuf,setPoaPinBuf]=useState("");
+  const[extraZones,setExtraZones]=useState(initData.extraZones||[]);
+  const[shownZones,setShownZones]=useState(initData.shownZones||{});// {"tid-zone":true} force-render empty zones
+  const[zoneNames,setZoneNames]=useState(initData.zoneNames||{});
+  const[editingZone,setEditingZone]=useState(null);
+  const[zoneNameBuf,setZoneNameBuf]=useState("");
+  const[itemSeq,setItemSeq]=useState(initData.itemSeq||{});
+  const[pendingApprovals,setPendingApprovals]=useState(initData.pendingApprovals||[]);
+  // Push a gated action to the dashboard queue for a director to approve later.
+  const pushToDashboard=(kind,detail)=>{
+    setPendingApprovals(p=>[...p,{id:`ap-${Date.now()}`,kind,detail,ref:client.ref||"—",by:idStaff||"staff",at:todayStr(),status:"pending"}]);
+    setPoaPinPrompt(null);
+    alert("Sent to dashboard for director approval. It will appear in the approvals queue.");
+  };
+  // Reorder an item within its zone list: dir=-1 up, +1 down.
+  const moveInZone=(list,id,dir)=>{
+    const ids=list.map(x=>x.id);const idx=ids.indexOf(id);const j=idx+dir;
+    if(idx<0||j<0||j>=ids.length)return;
+    const seq={};ids.forEach((x,k)=>{seq[x]=k;});
+    const tmp=seq[ids[idx]];seq[ids[idx]]=seq[ids[j]];seq[ids[j]]=tmp;
+    setItemSeq(s=>({...s,...seq}));
+  };
+  const seqSort=arr=>[...arr].sort((a,b)=>{const sa=itemSeq[a.id],sb=itemSeq[b.id];if(sa===undefined&&sb===undefined)return 0;if(sa===undefined)return 1;if(sb===undefined)return -1;return sa-sb;});
+  const[movePicker,setMovePicker]=useState(null);// {id, tradeId, current}
+  // Move an item to another zone within the same trade (trade-wide movement).
+  const moveItemToZone=(item,targetZone)=>{
+    if(item.srcId){/* dupe: update its zone in dupes */setDupes(d=>d.map(x=>x.id===item.id?{...x,zone:targetZone}:x));}
+    else{setZoneOverride(o=>({...o,[item.id]:targetZone}));}
+    setMovePicker(null);
+  };
+  // zoneList = default zones + any custom-added zones (for dropdowns & iteration)
+  const zoneList=useMemo(()=>[...ZONE_ORDER_DEFAULT,...extraZones.filter(z=>!ZONE_ORDER_DEFAULT.includes(z))],[extraZones]);
+  const zoneLabel=(tid,z)=>zoneNames[`${tid}-${z}`]||z;
+  const addZone=(tid)=>{const name=window.prompt("New zone name:");if(!name||!name.trim())return;const nm=name.trim();setExtraZones(list=>list.includes(nm)?list:[...list,nm]);setShownZones(s=>({...s,[`${tid}-${nm}`]:true}));setOpenZones(o=>({...o,[`${tid}-${nm}`]:true}));};
   const[dragId,setDragId]=useState(null);
   const[dragTarget,setDragTarget]=useState(null);
+  const dragIdRef=useRef(null);
+  const dragTargetRef=useRef(null);
+  const[topbarH,setTopbarH]=useState(52);
+  // AUTO-SCROLL while dragging: when a native drag hovers near the top/bottom edge of the
+  // viewport, gently scroll the page so off-screen zones become reachable as drop targets.
+  useEffect(()=>{
+    let raf=null,vy=0;
+    const EDGE=90,MAX=22;// px trigger band, max scroll speed
+    const tick=()=>{ if(vy!==0){window.scrollBy(0,vy);raf=requestAnimationFrame(tick);} else{raf=null;} };
+    const onDragOver=e=>{
+      if(!dragMeta.current){vy=0;return;}
+      const y=e.clientY,h=window.innerHeight;
+      if(y<EDGE){vy=-Math.ceil((EDGE-y)/EDGE*MAX);}
+      else if(y>h-EDGE){vy=Math.ceil((y-(h-EDGE))/EDGE*MAX);}
+      else{vy=0;}
+      if(vy!==0&&raf===null){raf=requestAnimationFrame(tick);}
+    };
+    const stop=()=>{vy=0;if(raf){cancelAnimationFrame(raf);raf=null;}};
+    document.addEventListener("dragover",onDragOver);
+    document.addEventListener("drop",stop);
+    document.addEventListener("dragend",stop);
+    return()=>{document.removeEventListener("dragover",onDragOver);document.removeEventListener("drop",stop);document.removeEventListener("dragend",stop);stop();};
+  },[]);
+  useEffect(()=>{
+    const measure=()=>{const el=document.querySelector(".codstudio-topbar");if(el)setTopbarH(el.offsetHeight);};
+    measure();window.addEventListener("resize",measure);
+    const t=setTimeout(measure,300);
+    return()=>{window.removeEventListener("resize",measure);clearTimeout(t);};
+  },[]);
   const imgRefs=useRef({});
   const saveTimerRef=useRef(null);
 
@@ -1003,7 +966,14 @@ function QuoteBuilder({initData,onSave,onBack}){
   const isOn=id=>itemOn[id]===true;
   const getZone=item=>zoneOverride[item.id]||item.zone||"Whole House";
   const getTier=id=>tiers[id]||"base";
-  const getEP=item=>{const t=getTier(item.id);if(!item.carpentry||t==="base")return item.price;return Math.round(item.price*FINISH[t].mult*100)/100;};
+  const getEP=item=>{const manual=poaPrices[item.id];if(manual!==undefined&&manual!==null&&manual!=="")return parseFloat(manual)||0;const t=getTier(item.id);if(!item.carpentry||t==="base")return item.price;return Math.round(item.price*FINISH[t].mult*100)/100;};
+  const isPoaEdited=id=>{const v=poaPrices[id];return v!==undefined&&v!==null&&v!=="";};
+  const isPoaApproved=id=>poaApproved[id]===true;
+  // A line needs approval if it has a manually-keyed POA price that is not yet approved.
+  const poaNeedsApproval=id=>isPoaEdited(id)&&!isPoaApproved(id);
+  const approvePoaPin=()=>{if(poaPinBuf===DIRECTOR_PIN){if(poaPinPrompt)setPoaApproved(a=>({...a,[poaPinPrompt]:true}));setPoaPinBuf("");setPoaPinPrompt(null);}else{alert("Incorrect Director PIN");}};
+  const requestPoaApproval=id=>setPoaPinPrompt(id);
+  const tryPoaPin=()=>{if(poaPinBuf===DIRECTOR_PIN){setPoaUnlocked(true);setPoaPinBuf("");}else{alert("Incorrect Director PIN");}};
   const zK=(tid,z)=>`${tid}-${z}`;
   const isZO=(tid,z)=>openZones[zK(tid,z)]!==false;
 
@@ -1020,7 +990,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const buildSaveData=()=>({
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     entity,status,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
-    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig
+    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved
   });
   const handleSave=()=>onSave(buildSaveData());
 
@@ -1031,74 +1001,87 @@ function QuoteBuilder({initData,onSave,onBack}){
   const zoneIDs=(t,z)=>[...t.items.filter(i=>getZone(i)===z).map(i=>i.id),...dupes.filter(d=>d.tradeId===t.id&&d.zone===z).map(d=>d.id),...customs.filter(c=>c.tradeId===t.id&&c.zone===z).map(c=>c.id)];
   const tradeOn=t=>tradeIDs(t).some(id=>itemOn[id]===true);
   const zoneOn=(t,z)=>zoneIDs(t,z).some(id=>itemOn[id]===true);
+  // OPTION A: trade/zone toggles now EXPAND to browse — they NEVER mass-select items.
+  // Item selection is manual, per line. The toggle still shows "on" when any line inside
+  // is selected (read via tradeOn/zoneOn), but clicking it only opens/closes the section.
   const toggleTM=t=>{
-    const ids=tradeIDs(t);
-    const willBeOn=!ids.some(id=>itemOn[id]===true);
-    const ns={};ids.forEach(id=>{ns[id]=willBeOn;});
-    setItemOn(o=>({...o,...ns}));
-    setOpenTrades(o=>({...o,[t.id]:willBeOn}));
-    const zu={};ZONE_ORDER.forEach(z=>{zu[zK(t.id,z)]=willBeOn;});
-    setOpenZones(o=>({...o,...zu}));
+    const isOpen=!!openTrades[t.id];
+    setOpenTrades(o=>({...o,[t.id]:!isOpen}));
   };
   const toggleZM=(t,z)=>{
-    const ids=zoneIDs(t,z);
-    const willBeOn=!ids.some(id=>itemOn[id]===true);
-    const ns={};ids.forEach(id=>{ns[id]=willBeOn;});
-    setItemOn(o=>({...o,...ns}));
-    if(willBeOn)setOpenTrades(o=>({...o,[t.id]:true}));
-    setOpenZones(o=>({...o,[zK(t.id,z)]:true}));
+    const isOpen=isZO(t.id,z);
+    setOpenTrades(o=>({...o,[t.id]:true}));
+    setOpenZones(o=>({...o,[zK(t.id,z)]:!isOpen}));
   };
   const toggleItem=(id,tradeId,zone)=>{
     const nowOn=!isOn(id);setItemOn(o=>({...o,[id]:nowOn}));
     if(nowOn){setOpenTrades(o=>({...o,[tradeId]:true}));setOpenZones(o=>({...o,[zK(tradeId,zone)]:true}));}
   };
 
-  // Drag via pointer events
+  // Drag via pointer events — driven by refs so handlers always read live drag state
+  // (React state closures are stale inside a captured pointer session; refs fix that).
+  // NATIVE HTML5 drag-and-drop — reliable across browsers, no pointer-capture / hit-test issues.
+  // The ⠿ handle sets draggable on its row; each zone is a drop target (see data-zone divs).
+  const commitMove=(itemId,isDupe,srcTradeId,targetTradeId,targetZone)=>{
+    if(srcTradeId!==targetTradeId)return;// only within same trade
+    if(isDupe){setDupes(d=>d.map(x=>x.id===itemId?{...x,zone:targetZone}:x));}
+    else{setZoneOverride(o=>({...o,[itemId]:targetZone}));}
+    flashMoved(itemId);
+  };
+  const dragMeta=useRef(null);// {itemId,isDupe,tradeId}
+  const[justMoved,setJustMoved]=useState(null);// itemId flashed gold ~2s after a drop
+  const flashMoved=id=>{setJustMoved(id);setTimeout(()=>setJustMoved(m=>m===id?null:m),2000);};
+  // Duplicate a line within the same zone (e.g. two wardrobes). Creates a dupe, turns it on, flashes it.
+  const duplicateLine=(item,trade,zone)=>{
+    if(isLocked)return;
+    const nid=`dupe-${item.id}-${Date.now()}`;
+    setDupes(d=>[...d,{id:nid,srcId:item.srcId||item.id,tradeId:trade.id,zone,desc:item.desc,unit:item.unit,price:item.srcId?item.price:getEP(item),carpentry:item.carpentry,addon:item.addon,poa:item.poa}]);
+    setItemOn(o=>({...o,[nid]:true}));
+    setQtys(q=>({...q,[nid]:parseFloat(qtys[item.id])||1}));
+    setOpenTrades(o=>({...o,[trade.id]:true}));setOpenZones(o=>({...o,[zK(trade.id,zone)]:true}));
+    flashMoved(nid);
+  };
   const pointerDragHandlers=(item,trade)=>{
     if(trade.noZone||!isOn(item.id)||isLocked)return{};
     return{
-      onPointerDown:e=>{
-        e.currentTarget.setPointerCapture(e.pointerId);
+      draggable:true,
+      onDragStart:e=>{
+        dragMeta.current={itemId:item.id,isDupe:!!item.srcId,tradeId:trade.id};
         setDragId(item.id);
+        try{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",item.id);}catch(_){}
       },
-      onPointerUp:e=>{
-        if(dragId&&dragTarget){
-          const{tradeId:tId,zone}=dragTarget;
-          const srcZ=getZone(item);
-          if(srcZ!==zone){
-            const already=dupes.some(d=>d.srcId===dragId&&d.zone===zone&&d.tradeId===tId);
-            if(!already){
-              const nid=`dupe-${dragId}-${zone}-${Date.now()}`;
-              setDupes(d=>[...d,{id:nid,srcId:dragId,tradeId:tId,zone,desc:item.desc,unit:item.unit,price:getEP(item),carpentry:item.carpentry,addon:item.addon}]);
-            }
-          }
-        }
-        setDragId(null);setDragTarget(null);
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      },
-      onPointerMove:e=>{
-        if(!dragId)return;
-        // find zone under cursor
-        const els=document.elementsFromPoint(e.clientX,e.clientY);
-        const zoneEl=els.find(el=>el.dataset&&el.dataset.zone&&el.dataset.tradeid);
-        if(zoneEl){
-          setDragTarget({tradeId:parseInt(zoneEl.dataset.tradeid),zone:zoneEl.dataset.zone});
-        }
-      },
+      onDragEnd:()=>{dragMeta.current=null;setDragId(null);setDragTarget(null);},
     };
   };
+  // Drop-target handlers applied to each zone container.
+  const zoneDropHandlers=(trade,zone)=>({
+    onDragOver:e=>{
+      if(!dragMeta.current||dragMeta.current.tradeId!==trade.id)return;
+      e.preventDefault();try{e.dataTransfer.dropEffect="move";}catch(_){}
+      if(!(dragTarget&&dragTarget.tradeId===trade.id&&dragTarget.zone===zone))setDragTarget({tradeId:trade.id,zone});
+    },
+    onDrop:e=>{
+      e.preventDefault();
+      const m=dragMeta.current;
+      if(m&&m.tradeId===trade.id){const srcZ=getZone({id:m.itemId,srcId:m.isDupe?m.itemId:undefined});commitMove(m.itemId,m.isDupe,m.tradeId,trade.id,zone);}
+      dragMeta.current=null;setDragId(null);setDragTarget(null);
+    },
+  });
 
   // Subtotals
   const tradeSubs=useMemo(()=>TRADES.map(t=>{
-    const base=t.items.reduce((s,i)=>isOn(i.id)?s+(parseFloat(qtys[i.id])||0)*getEP(i):s,0);
-    const dp=dupes.filter(d=>d.tradeId===t.id).reduce((s,d)=>isOn(d.id)?s+(parseFloat(qtys[d.id])||0)*d.price:s,0);
+    // Unapproved POA lines are pending — excluded from totals until a senior/director approves.
+    const base=t.items.reduce((s,i)=>isOn(i.id)&&!poaNeedsApproval(i.id)?s+(parseFloat(qtys[i.id])||0)*getEP(i):s,0);
+    const dp=dupes.filter(d=>d.tradeId===t.id).reduce((s,d)=>isOn(d.id)&&!poaNeedsApproval(d.id)?s+(parseFloat(qtys[d.id])||0)*d.price:s,0);
     const cu=customs.filter(c=>c.tradeId===t.id&&c.approved).reduce((s,c)=>isOn(c.id)?s+(parseFloat(qtys[c.id])||1)*c.price:s,0);
     const removal=isVO?t.items.reduce((s,i)=>removalOn[i.id]&&isOn(i.id)?s-((parseFloat(qtys[i.id])||0)*getEP(i)):s,0):0;
     return{id:t.id,code:t.code,name:t.name,sub:base+dp+cu+removal};
-  }),[qtys,itemOn,tiers,dupes,customs,removalOn]);
+  }),[qtys,itemOn,tiers,dupes,customs,removalOn,poaPrices,poaApproved]);
 
   const getDesignPrice=item=>{
     if(item.fixedPrice!==null)return item.fixedPrice;
+    // 1.1 = 15% of RAW sqft (e.g. 1000sqft → $150). 1.2/1.3/1.4 = % of the $5/sqft design pool.
+    if(item.basis==="raw")return Math.round(unitSqft*(item.psfPct||0));
     return Math.round(unitSqft*DESIGN_PSF_RATE*(item.psfPct||0));
   };
   const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0),[designOn,unitSqft]);
@@ -1135,18 +1118,25 @@ function QuoteBuilder({initData,onSave,onBack}){
 
   // Print — both buttons (and the browser's own Cmd+P) just call window.print().
   // The .print-section quote document is the print surface; the handlers below flag it.
-  const doPrintSummary=()=>{window.print();};
+  // Print scope: pre-signing only the Summary page may print freely.
+  // Full (all pages) needs Director PIN — unless status is Signed, then it is free.
+  const printScopeRef=useRef("full");
+  const runPrint=scope=>{printScopeRef.current=scope;window.print();};
+  const doPrintSummary=()=>{runPrint(status==="Signed"?"full":"summary");};
   const doFullPrint=()=>{
-    if(printPin===DIRECTOR_PIN){setShowFullPrintPin(false);setPrintPin("");window.print();}
-    else alert("Incorrect PIN");
+    if(status==="Signed"){runPrint("full");return;}
+    if(printPin===DIRECTOR_PIN){setShowFullPrintPin(false);setPrintPin("");runPrint("full");}
+    else alert("Incorrect Director PIN");
   };
   // Reliable cross-browser print filtering: `beforeprint` fires for window.print()
   // AND native Ctrl/Cmd+P. We flag <body class="printing"> so CSS reveals only the
   // selected-items .print-section document and hides the live edit page; `afterprint`
   // removes the flag, restoring the page exactly to its prior edit state.
   useEffect(()=>{
-    const before=()=>document.body.classList.add("printing");
-    const after=()=>document.body.classList.remove("printing");
+    const before=()=>{document.body.classList.add("printing");
+      if(printScopeRef.current==="summary")document.body.classList.add("summary-only");
+      else document.body.classList.remove("summary-only");};
+    const after=()=>{document.body.classList.remove("printing");document.body.classList.remove("summary-only");};
     window.addEventListener("beforeprint",before);
     window.addEventListener("afterprint",after);
     return()=>{
@@ -1162,7 +1152,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   return(
     <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh",color:C.ink}}>
       {/* TOPBAR */}
-      <div className="no-print" style={{background:C.ink,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6,position:"sticky",top:0,zIndex:100}}>
+      <div className="no-print codstudio-topbar" style={{background:C.ink,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={()=>{handleSave();onBack();}} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>← All</button>
           <div>
@@ -1208,8 +1198,8 @@ function QuoteBuilder({initData,onSave,onBack}){
           {step==="preview"&&(
             <>
               <OBtn ch="← Edit" onClick={()=>setStep("quote")} col={C.gold} sm/>
-              <button onClick={doPrintSummary} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🖨 Print Summary</button>
-              <button onClick={()=>setShowFullPrintPin(p=>!p)} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🔒 Full Print</button>
+              <button onClick={doPrintSummary} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🖨 {status==="Signed"?"Print":"Print Summary"}</button>
+              <button onClick={()=>{if(status==="Signed")doFullPrint();else setShowFullPrintPin(p=>!p);}} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:status==="Signed"?C.success:C.stone,fontWeight:600}}>{status==="Signed"?"🖨 Full Print":"🔒 Full Print"}</button>
             </>
           )}
           {step==="quote"&&subtotal>0&&(
@@ -1221,6 +1211,31 @@ function QuoteBuilder({initData,onSave,onBack}){
         </div>
       </div>
 
+      {/* TWO-WAY GATING PROMPT — approve THIS line: PIN now OR send to dashboard */}
+      {poaPinPrompt!==null&&(
+        <div className="no-print" style={{background:C.white,border:`1px solid ${C.terra}`,borderRadius:6,padding:"16px 20px",margin:"8px 16px 0",boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+          <div style={{fontSize:13,color:C.terra,fontFamily:T.sans,fontWeight:700,marginBottom:3}}>Senior / Director approval required</div>
+          <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginBottom:12}}>This POA line is greyed out and will not print until approved. Choose one:</div>
+          <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-start"}}>
+            {/* Option 1: PIN now */}
+            <div style={{flex:"1 1 220px",background:C.cream,border:`1px solid ${C.border}`,borderRadius:6,padding:"12px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.ink,letterSpacing:1,marginBottom:8,fontFamily:T.sans}}>① ENTER PIN NOW</div>
+              <div style={{fontSize:10,color:C.stone,marginBottom:9,fontFamily:T.sans}}>A senior/director keys the PIN to approve this line now.</div>
+              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                <input type="password" value={poaPinBuf} onChange={e=>setPoaPinBuf(e.target.value)} onKeyDown={e=>e.key==="Enter"&&approvePoaPin()} placeholder="PIN" autoFocus style={{width:90,border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 8px",fontSize:12,fontFamily:T.sans}}/>
+                <Btn ch="Approve line" onClick={approvePoaPin} sm/>
+              </div>
+            </div>
+            {/* Option 2: Send to dashboard */}
+            <div style={{flex:"1 1 220px",background:C.cream,border:`1px solid ${C.border}`,borderRadius:6,padding:"12px 14px"}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.ink,letterSpacing:1,marginBottom:8,fontFamily:T.sans}}>② SEND TO DASHBOARD</div>
+              <div style={{fontSize:10,color:C.stone,marginBottom:9,fontFamily:T.sans}}>Park it for a director to approve later from the dashboard.</div>
+              <button onClick={()=>pushToDashboard("POA / custom price",`Item ${poaPinPrompt}`)} style={{background:C.terra,color:C.white,border:"none",borderRadius:4,padding:"7px 14px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>Send for approval →</button>
+            </div>
+          </div>
+          <button onClick={()=>{setPoaPinPrompt(null);setPoaPinBuf("");}} style={{marginTop:12,background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans,textDecoration:"underline"}}>Cancel</button>
+        </div>
+      )}
       {/* FULL PRINT PIN PROMPT */}
       {showFullPrintPin&&(
         <div className="no-print" style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"14px 18px",margin:"8px 16px 0",display:"flex",gap:8,alignItems:"center"}}>
@@ -1262,6 +1277,21 @@ function QuoteBuilder({initData,onSave,onBack}){
 
       <div style={{maxWidth:1160,margin:"0 auto",padding:"16px 14px"}}>
       {step==="quote"&&(<>
+        {/* TRADE JUMP NAV — horizontal sticky bar, wraps on narrow/mobile, never overlaps */}
+        <div className="no-print trade-nav" style={{position:"sticky",top:topbarH,zIndex:55,display:"flex",flexWrap:"nowrap",overflowX:"auto",gap:4,background:C.white,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 9px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",WebkitOverflowScrolling:"touch"}}>
+          <span style={{fontSize:9,letterSpacing:1,color:C.stone,fontWeight:700,fontFamily:T.sans,alignSelf:"center",marginRight:8,flex:"0 0 auto",whiteSpace:"nowrap"}}>TRADE</span>
+          {[{id:1,code:"01",name:"Design"},...TRADES.filter(t=>t.id!==1).map(t=>({id:t.id,code:t.code,name:t.name}))].map(t=>{
+            const on=t.id===1?DESIGN_ITEMS_CFG.some(i=>designOn[i.id]):(TRADES.find(x=>x.id===t.id)&&tradeOn(TRADES.find(x=>x.id===t.id)));
+            return(
+              <button key={t.id} title={t.name}
+                onClick={()=>{setOpenTrades(o=>({...o,[t.id]:true}));setTimeout(()=>{const el=document.getElementById(`trade-anchor-${t.id}`);if(el){const navEl=document.querySelector(".trade-nav");const off=topbarH+(navEl?navEl.offsetHeight:44)+12;const y=el.getBoundingClientRect().top+window.pageYOffset-off;window.scrollTo({top:y,behavior:"smooth"});}},60);}}
+                style={{flex:"0 0 auto",display:"inline-flex",alignItems:"center",gap:4,borderRadius:14,border:`1px solid ${on?C.gold:C.border}`,background:on?C.ink:C.white,color:on?C.gold:C.stone,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:T.sans,padding:"4px 10px",transition:"all .15s",whiteSpace:"nowrap"}}>
+                <span style={{fontWeight:700}}>{t.code}</span>
+                <span className="trade-nav-name">{t.name}</span>
+              </button>
+            );
+          })}
+        </div>
       <div className="no-print">
         {/* ENTITY */}
         <div style={{...card,padding:"14px 18px",marginBottom:10}}>
@@ -1372,13 +1402,13 @@ function QuoteBuilder({initData,onSave,onBack}){
           const anyOn=DESIGN_ITEMS_CFG.some(i=>designOn[i.id]);
           const tOpen=openTrades[1]!==false;
           return(
-            <div style={card}>
+            <div id="trade-anchor-1" style={card}>
               <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white,cursor:"pointer"}} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}>
                 <div style={{display:"flex",alignItems:"center",gap:7}}>
                   <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}/>
                   <Toggle on={anyOn} small disabled={isLocked} onClick={()=>{if(isLocked)return;const ns={};DESIGN_ITEMS_CFG.forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
                   <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>01</span>
-                  <span style={{fontFamily:T.serif,fontSize:15,fontWeight:300}}>Interior Design & Consultation</span>
+                  <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>Interior Design & Consultation</span>
                   <span style={{fontSize:10,color:C.stone}}>— PSF-based fees</span>
                 </div>
                 {designSubtotal>0&&<span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(designSubtotal)}</span>}
@@ -1399,7 +1429,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                   </div>
                   {DESIGN_ITEMS_CFG.map(item=>{
                     const on=!!designOn[item.id];
-                    const price=item.fixedPrice!==null?item.fixedPrice:Math.round(psfPool*(item.psfPct||0));
+                    const price=item.fixedPrice!==null?item.fixedPrice:(item.basis==="raw"?Math.round(unitSqft*(item.psfPct||0)):Math.round(psfPool*(item.psfPct||0)));
                     return(
                       <div key={item.id} style={{borderBottom:`1px solid #F5F0E8`,background:on?"#FFFDF8":"#fff"}}>
                         <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 90px 80px",gap:3,padding:"7px 10px",alignItems:"start",opacity:on?1:0.5}}>
@@ -1408,18 +1438,18 @@ function QuoteBuilder({initData,onSave,onBack}){
                             <Toggle on={on} small disabled={isLocked} onClick={()=>{if(!isLocked)setDesignOn(d=>({...d,[item.id]:!d[item.id]}));}}/>
                           </div>
                           <div>
-                            <div style={{fontSize:12,fontFamily:T.sans,color:on?C.ink:C.stone,lineHeight:1.4,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                              {item.addon&&<span style={{border:`1px solid ${C.gold}`,color:C.gold,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700}}>+</span>}
+                            <div style={{fontSize:14,fontFamily:T.sans,color:on?C.ink:C.stone,lineHeight:1.45,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                              {item.addon&&<span style={{background:`${C.gold}22`,border:`1px solid ${C.gold}`,color:C.gold,borderRadius:8,padding:"1px 8px",fontSize:9,fontWeight:700,letterSpacing:0.3}}>Add-on</span>}
                               {item.desc}
                               {item.psfPct&&<span title={`${(item.psfPct*100).toFixed(0)}% of design pool`} style={{fontSize:8,color:C.stone,background:C.creamD,borderRadius:2,padding:"1px 4px",cursor:"help"}}>i</span>}
                             </div>
                             {on&&<textarea placeholder="Notes to client..." value={notes[item.id]||""} onChange={e=>setNotes(n=>({...n,[item.id]:e.target.value}))} rows={1}
                               style={{width:"100%",marginTop:4,border:`1px solid ${C.border}`,borderRadius:2,padding:"4px 7px",fontSize:11,fontFamily:T.sans,background:"#FAFAF8",color:C.stone,boxSizing:"border-box",resize:"vertical",minHeight:28,lineHeight:1.5,display:"block"}}/>}
                           </div>
-                          <div style={{fontFamily:T.serif,fontSize:13,textAlign:"right",color:price>0?C.ink:C.stone,paddingTop:3}}>
-                            {price>0?fmt(price):<span style={{color:C.gold,fontSize:11}}>TBC</span>}
+                          <div style={{fontFamily:T.serif,fontSize:15,textAlign:"right",color:price>0?C.ink:C.stone,paddingTop:3}}>
+                            {price>0?fmt(price):<span style={{color:C.gold,fontSize:13}}>TBC</span>}
                           </div>
-                          <div style={{fontFamily:T.serif,fontSize:13,color:on&&price>0?C.ink:C.border,textAlign:"right",paddingTop:3,fontWeight:on&&price>0?600:400}}>
+                          <div style={{fontFamily:T.serif,fontSize:15,color:on&&price>0?C.ink:C.border,textAlign:"right",paddingTop:3,fontWeight:on&&price>0?600:400}}>
                             {on&&price>0?fmt(price):"—"}
                           </div>
                         </div>
@@ -1449,21 +1479,21 @@ function QuoteBuilder({initData,onSave,onBack}){
             tCusts.forEach(c=>{const z=c.zone||"Whole House";if(!zonesMap[z])zonesMap[z]=[];});
           }
           return(
-            <div key={trade.id} style={card}>
+            <div key={trade.id} id={`trade-anchor-${trade.id}`} style={card}>
               <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white}}>
                 <div style={{display:"flex",alignItems:"center",gap:7}}>
                   <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,[trade.id]:!o[trade.id]}))}/>
                   <Toggle on={allOn} onClick={()=>{if(!isLocked)toggleTM(trade);}} small disabled={isLocked}/>
                   <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>{trade.code}</span>
-                  <span style={{fontFamily:T.serif,fontSize:15,fontWeight:300}}>{trade.name}</span>
+                  <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>{trade.name}</span>
                 </div>
                 {tSub>0&&<span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(tSub)}</span>}
               </div>
               {tOpen&&(<>
                 {trade.note&&<div style={{fontSize:11,color:C.stone,padding:"0 14px 7px",fontStyle:"italic",fontFamily:T.sans}}>{trade.note}</div>}
-                <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 52px 48px 80px 44px 80px",gap:3,background:C.creamD,padding:"4px 10px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 58px 48px 80px 78px 80px",gap:2,background:C.creamD,padding:"4px 10px"}}>
                   {["","","ITEM","QTY","UNIT","UNIT RATE","IMG","TOTAL"].map((h,i)=>(
-                    <div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>
+                    <div key={i} style={{fontSize:10,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>
                   ))}
                 </div>
                 {trade.noZone?(
@@ -1480,6 +1510,13 @@ function QuoteBuilder({initData,onSave,onBack}){
                         onTier={k=>setTiers(t=>({...t,[item.id]:getTier(item.id)===k?"base":k}))}
                         onImg={()=>{const el=document.createElement("input");el.type="file";el.accept="image/*";el.onchange=e=>handleImg(item.id,e);el.click();}}
                         onApprove={()=>{}}
+                        poaUnlocked={poaUnlocked}
+                        poaEdited={isPoaEdited(item.id)}
+                        poaVal={poaPrices[item.id]}
+                        onPoaUnlock={()=>requestPoaApproval(item.id)}
+                        onPoaChange={v=>setPoaPrices(p=>({...p,[item.id]:v}))}
+                        poaNeedsApp={poaNeedsApproval(item.id)}
+                        poaApproved={isPoaApproved(item.id)}
                         dragHandlers={pointerDragHandlers(item,trade)}
                         dragOver={dragId&&dragTarget?.zone===getZone(item)&&dragId!==item.id}
                         isVO={isVO} isRemoved={!!removalOn[item.id]} onRemove={()=>setRemovalOn(r=>({...r,[item.id]:!r[item.id]}))}
@@ -1496,14 +1533,21 @@ function QuoteBuilder({initData,onSave,onBack}){
                         onTier={()=>{}}
                         onImg={()=>{}}
                         onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
+                        poaUnlocked={poaUnlocked}
+                        poaEdited={isPoaEdited(c.id)}
+                        poaVal={poaPrices[c.id]}
+                        onPoaUnlock={()=>requestPoaApproval(c.id)}
+                        onPoaChange={v=>setPoaPrices(p=>({...p,[c.id]:v}))}
+                        poaNeedsApp={poaNeedsApproval(c.id)}
+                        poaApproved={isPoaApproved(c.id)}
                         dragHandlers={{}}
                         dragOver={false}
                       />;
                     })}
                   </>
                 ):(
-                  ZONE_ORDER.filter(z=>zonesMap[z]||tCusts.some(c=>c.zone===z)).map(zone=>{
-                    const zItems=zonesMap[zone]||[];const zCusts=tCusts.filter(c=>c.zone===zone);
+                  (()=>{const baseZones=trade.zones||zoneList;const tradeZones=[...baseZones,...extraZones.filter(z=>!baseZones.includes(z))];return tradeZones;})().filter(z=>zonesMap[z]||tCusts.some(c=>c.zone===z)||shownZones[`${trade.id}-${z}`]).map(zone=>{
+                    const zItems=seqSort(zonesMap[zone]||[]);const zCusts=tCusts.filter(c=>c.zone===zone);
                     if(!zItems.length&&!zCusts.length)return null;
                     const zOpen=isZO(trade.id,zone);
                     const zSub=zItems.reduce((s,i)=>{const p=i.srcId?i.price:getEP(i);return isOn(i.id)?s+(parseFloat(qtys[i.id])||0)*p:s;},0)+zCusts.filter(c=>c.approved&&isOn(c.id)).reduce((s,c)=>s+(parseFloat(qtys[c.id])||1)*c.price,0);
@@ -1512,13 +1556,24 @@ function QuoteBuilder({initData,onSave,onBack}){
                       <div key={zone}
                         data-zone={zone}
                         data-tradeid={trade.id}
-                        onPointerEnter={()=>{if(dragId)setDragTarget({tradeId:trade.id,zone});}}
-                        onPointerLeave={()=>{if(dragTarget?.zone===zone&&dragTarget?.tradeId===trade.id)setDragTarget(null);}}>
+                        {...zoneDropHandlers(trade,zone)}>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:isDropTarget?"#FFF8F0":C.cream,borderTop:`1px solid ${C.border}`,border:isDropTarget?`1px dashed ${C.gold}`:undefined}}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
                             <CBtn open={zOpen} onClick={()=>setOpenZones(o=>({...o,[zK(trade.id,zone)]:!isZO(trade.id,zone)}))} size={18}/>
                             <Toggle on={zoneOn(trade,zone)} onClick={e=>{e.stopPropagation();if(!isLocked)toggleZM(trade,zone);}} small disabled={isLocked}/>
-                            <span onClick={()=>setOpenZones(o=>({...o,[zK(trade.id,zone)]:!isZO(trade.id,zone)}))} style={{fontSize:10,fontWeight:600,letterSpacing:1,color:isDropTarget?C.gold:C.stone,cursor:"pointer",userSelect:"none"}}>{zone}</span>
+                            {editingZone===zK(trade.id,zone)?(
+                              <input autoFocus value={zoneNameBuf} onChange={e=>setZoneNameBuf(e.target.value)}
+                                onBlur={()=>{const v=zoneNameBuf.trim();setZoneNames(m=>({...m,[zK(trade.id,zone)]:v||zone}));setEditingZone(null);}}
+                                onKeyDown={e=>{if(e.key==="Enter"){const v=zoneNameBuf.trim();setZoneNames(m=>({...m,[zK(trade.id,zone)]:v||zone}));setEditingZone(null);}if(e.key==="Escape")setEditingZone(null);}}
+                                style={{fontSize:11,fontWeight:600,letterSpacing:0.5,border:`1px solid ${C.gold}`,borderRadius:3,padding:"2px 6px",fontFamily:T.sans,width:150}}/>
+                            ):(
+                              <span style={{display:"inline-flex",alignItems:"center",gap:5}}>
+                                <span onClick={()=>setOpenZones(o=>({...o,[zK(trade.id,zone)]:!isZO(trade.id,zone)}))}
+                                  style={{fontSize:10,fontWeight:600,letterSpacing:1,color:isDropTarget?C.gold:C.stone,cursor:"pointer",userSelect:"none"}}>{zoneLabel(trade.id,zone)}</span>
+                                {!isLocked&&<span onClick={e=>{e.stopPropagation();setEditingZone(zK(trade.id,zone));setZoneNameBuf(zoneLabel(trade.id,zone));}}
+                                  title="Rename zone" style={{fontSize:10,color:C.gold,cursor:"pointer",userSelect:"none",opacity:0.7}}>✎</span>}
+                              </span>
+                            )}
                             {isDropTarget&&<span style={{fontSize:9,color:C.gold}}>↓ Drop here</span>}
                           </div>
                           {zSub>0&&<span style={{fontFamily:T.serif,fontSize:13,color:C.gold}}>{fmt(zSub)}</span>}
@@ -1536,8 +1591,17 @@ function QuoteBuilder({initData,onSave,onBack}){
                               onTier={k=>setTiers(t=>({...t,[item.id]:getTier(item.id)===k?"base":k}))}
                               onImg={()=>{const el=document.createElement("input");el.type="file";el.accept="image/*";el.onchange=e=>handleImg(item.id,e);el.click();}}
                               onApprove={()=>{}}
-                              dragHandlers={!item.srcId?pointerDragHandlers(item,trade):{}}
+                              poaUnlocked={poaUnlocked}
+                              poaEdited={isPoaEdited(item.id)}
+                              poaVal={poaPrices[item.id]}
+                              onPoaUnlock={()=>requestPoaApproval(item.id)}
+                              onPoaChange={v=>setPoaPrices(p=>({...p,[item.id]:v}))}
+                              poaNeedsApp={poaNeedsApproval(item.id)}
+                              poaApproved={isPoaApproved(item.id)}
+                              dragHandlers={!item.srcId?pointerDragHandlers(item,trade):pointerDragHandlers(item,trade)}
                               dragOver={isDropTarget&&dragId!==item.id}
+                              flash={justMoved===item.id}
+                              onDuplicate={()=>duplicateLine(item,trade,zone)}
                               isVO={isVO} isRemoved={!!removalOn[item.id]} onRemove={()=>setRemovalOn(r=>({...r,[item.id]:!r[item.id]}))}
                             />;
                           })}
@@ -1551,6 +1615,13 @@ function QuoteBuilder({initData,onSave,onBack}){
                               onNote={v=>setNotes(n=>({...n,[c.id]:v}))}
                               onTier={()=>{}} onImg={()=>{}}
                               onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
+                              poaUnlocked={poaUnlocked}
+                              poaEdited={isPoaEdited(c.id)}
+                              poaVal={poaPrices[c.id]}
+                              onPoaUnlock={()=>requestPoaApproval(c.id)}
+                              onPoaChange={v=>setPoaPrices(p=>({...p,[c.id]:v}))}
+                              poaNeedsApp={poaNeedsApproval(c.id)}
+                              poaApproved={isPoaApproved(c.id)}
                               dragHandlers={{}} dragOver={false}
                             />;
                           })}
@@ -1572,7 +1643,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                             </select>
                           ):k==="zone"?(
                             <select value={customForm.zone||"Whole House"} onChange={e=>setCustomForm(f=>({...f,zone:e.target.value}))} style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px",fontSize:11,fontFamily:T.sans,background:C.cream}}>
-                              {ZONE_ORDER.map(z=><option key={z} value={z}>{z}</option>)}
+                              {zoneList.map(z=><option key={z} value={z}>{z}</option>)}
                             </select>
                           ):(
                             <input placeholder={ph} value={customForm[k]||""}
@@ -1593,11 +1664,17 @@ function QuoteBuilder({initData,onSave,onBack}){
                     </div>
                   </div>
                 ):(
-                  <div style={{padding:"6px 14px",borderTop:`1px solid ${C.creamD}`}}>
+                  <div style={{padding:"6px 14px",borderTop:`1px solid ${C.creamD}`,display:"flex",gap:8,flexWrap:"wrap"}}>
                     <button onClick={()=>setCustomForm({tradeId:trade.id,desc:"",unit:"LS",zone:"Whole House",price:"",qty:1})}
-                      style={{background:"transparent",border:`1px dashed ${C.border}`,borderRadius:3,color:C.stone,fontSize:11,cursor:"pointer",fontFamily:T.sans,padding:"4px 12px"}}>
-                      + Custom Line Item
+                      style={{background:C.gold,border:`1px solid ${C.gold}`,borderRadius:16,color:C.ink,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:T.sans,padding:"5px 16px",letterSpacing:0.3}}>
+                      + Add item
                     </button>
+                    {!trade.noZone&&ADDZONE_OK.includes(trade.id)&&(
+                      <button onClick={()=>addZone(trade.id)}
+                        style={{background:"transparent",border:`1px dashed ${C.gold}`,borderRadius:16,color:C.gold,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,padding:"5px 16px",letterSpacing:0.3}}>
+                        ＋ Add Zone
+                      </button>
+                    )}
                   </div>
                 ))}
                 {tSub>0&&<div style={{display:"flex",justifyContent:"flex-end",gap:10,padding:"8px 14px",background:C.creamD,alignItems:"baseline"}}>
@@ -1940,7 +2017,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                     {(()=>{
                       let itemNo=0;
                       const rows=[];
-                      const zones=trade.noZone?["_all"]:ZONE_ORDER.filter(z=>zoneGroups[z]);
+                      const zones=trade.noZone?["_all"]:zoneList.filter(z=>zoneGroups[z]);
                       zones.forEach(zone=>{
                         if(!trade.noZone&&zone!=="_all"){
                           rows.push(
@@ -2031,12 +2108,12 @@ function QuoteBuilder({initData,onSave,onBack}){
               if(trade.id===1){
                 rows=DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>({
                   id:i.id,desc:i.desc,qty:"1",unit:"LS",note:"",
-                  amount:i.fixedPrice!==null?i.fixedPrice:Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0))}));
+                  amount:i.fixedPrice!==null?i.fixedPrice:(i.basis==="raw"?Math.round(unitSqft*(i.psfPct||0)):Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0)))}));
               }else{
-                const base=trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0).map(i=>({
+                const base=trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0&&!poaNeedsApproval(i.id)).map(i=>({
                   id:i.id,desc:i.desc,qty:parseFloat(qtys[i.id])||0,unit:i.unit,note:notes[i.id]||"",
                   amount:(parseFloat(qtys[i.id])||0)*getEP(i)}));
-                const dup=dupes.filter(d=>d.tradeId===trade.id&&isOn(d.id)&&(parseFloat(qtys[d.id])||0)>0).map(d=>({
+                const dup=dupes.filter(d=>d.tradeId===trade.id&&isOn(d.id)&&(parseFloat(qtys[d.id])||0)>0&&!poaNeedsApproval(d.id)).map(d=>({
                   id:d.id,desc:d.desc,qty:parseFloat(qtys[d.id])||0,unit:d.unit||"LS",note:notes[d.id]||"",
                   amount:(parseFloat(qtys[d.id])||0)*d.price}));
                 const cus=customs.filter(c=>c.tradeId===trade.id&&c.approved&&isOn(c.id)).map(c=>({
@@ -2091,7 +2168,7 @@ function QuoteBuilder({initData,onSave,onBack}){
         </div>
 
         {/* SUMMARY — totals + payment schedule */}
-        <div className="print-section" style={{display:(step==="preview"&&tab==="summary")?undefined:"none"}}>
+        <div className="print-section summary-doc" style={{display:(step==="preview"&&tab==="summary")?undefined:"none"}}>
           <div className="print-summary" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"22px 26px",marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
