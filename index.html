@@ -493,9 +493,23 @@ const DESIGN_ITEMS_CFG=[
 // ── STORAGE ───────────────────────────────────────────────────────────────────
 let CLOUD=[];let CLOUD_READY=false;
 const loadVersions=()=>CLOUD;
-const saveVersions=v=>{CLOUD=v;localStorage.setItem(STORAGE_KEY,JSON.stringify(v));};
-const TRASH_DAYS=30;
-const daysLeft=q=>{if(!q||!q.deletedAt)return null;const d=Math.ceil((TRASH_DAYS*864e5-(Date.now()-q.deletedAt))/864e5);return d;};
+const saveVersions=v=>{
+  CLOUD=v;
+  // localStorage is hard-capped (~5-10MB) and silently fails once full. Trashed quotes are
+  // already deleted — they do not need to be available offline. Keep them in Supabase only.
+  const lean=v.filter(q=>!q.deletedAt);
+  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(lean));}
+  catch(e){
+    // Still over the cap: drop signature images from the local copy as a last resort.
+    // The cloud record keeps them; only the offline cache is stripped.
+    try{
+      const stripped=lean.map(q=>({...q,sig:q.sig?{...q.sig,summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",idCanvas:"",directorCanvas:"",clientCanvas:"",client2Canvas:""}:q.sig}));
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(stripped));
+    }catch(e2){console.warn("localStorage full — running from cloud only.",e2);}
+  }
+};
+const TRASH_DAYS=90;
+const daysLeft=q=>{if(!q||!q.deletedAt)return null;return Math.ceil((TRASH_DAYS*864e5-(Date.now()-q.deletedAt))/864e5);};
 const cloudPull=async()=>{
   const{data,error}=await sb.from("quotes").select("id,payload").order("id",{ascending:false});
   if(error){console.error("cloud pull",error);
@@ -512,7 +526,7 @@ const cloudPull=async()=>{
   }
   // Auto-purge: anything sitting in Trash beyond the retention window is destroyed on load.
   // (A web app cannot self-trigger, so the purge happens the next time anyone opens it —
-  //  30 days is therefore a floor, not an exact expiry. That is acceptable.)
+  //  the retention window is therefore a floor, not an exact expiry. That is acceptable.)
   const expired=CLOUD.filter(q=>q.deletedAt&&(Date.now()-q.deletedAt)>TRASH_DAYS*864e5);
   if(expired.length){
     await sb.from("quotes").delete().in("id",expired.map(q=>q.id));
@@ -1223,7 +1237,6 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[client,setClient]=useState(initData.client||{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()});
   const[idStaff,setIdStaff]=useState(initData.idStaff||(SESSION?SESSION.name:""));
   const[status,setStatus]=useState(initData.status||"Draft");
-  const invNo=initData.invNo||null;
   const[unitSqft,setUnitSqftRaw]=useState(initData.unitSqft||0);
   const setUnitSqft=(...a)=>{markRevised();setUnitSqftRaw(...a);};
   const[projectType,setProjectType]=useState(initData.projectType||"condo");
@@ -1387,26 +1400,65 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig,voAdds,voOmits,voApproved]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig,voAdds,voOmits,voApproved,revised]);
 
   const buildSaveData=()=>({
-    invNo,
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
     isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,revised,
     openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved
   });
   const[issuing,setIssuing]=useState(false);
+  // Everything autosaves as you type. Save exists for ONE thing that autosave cannot do:
+  // it asks the server for the real reference number (DRAFT-A7F2K9 → ii-2607-053).
+  // Until it is pressed, the quote has no issued reference. That is why it is not redundant.
+  const[saveState,setSaveState]=useState("idle"); // idle | saving | saved
+
+  // ── CONTRACT EXECUTION ────────────────────────────────────────────────────
+  // A quote may only be marked Signed when it is ACTUALLY signed. Previously any single
+  // canvas satisfied the check, and a Director PIN could force Signed on a blank document —
+  // so "Signed" did not mean signed. All three parties are now mandatory.
+  const hasInk=v=>typeof v==="string"&&v.length>200;   // an empty canvas still serialises to a short data-URL
+  const execChecks=[
+    {key:"idCanvas",       label:"Designer signature",   ok:hasInk(sig.idCanvas)},
+    {key:"directorCanvas", label:"Director signature",   ok:hasInk(sig.directorCanvas)},
+    {key:"clientCanvas",   label:"Client signature",     ok:hasInk(sig.clientCanvas)},
+    {key:"clientName",     label:"Client name",          ok:!!(sig.clientName||"").trim()},
+    {key:"agreed",         label:"Client acceptance",    ok:!!sig.agreed}
+  ];
+  const canExecute=execChecks.every(c=>c.ok);
+  const executeContract=async()=>{
+    if(!canExecute){alert("Cannot execute — the contract is not fully signed.");return;}
+    if(!window.confirm(
+      `EXECUTE CONTRACT\n\n${client.name||"Client"} · ${client.ref}\n${fmt(total)}\n\n`+
+      `This locks the document permanently. It cannot be edited, deleted, or reverted.\n\nProceed?`))return;
+    setStatus("Signed");
+    setRevised(false);
+    // No invoice number is issued here. Invoicing is QuickBooks' job — two systems minting
+    // invoice numbers would be impossible to reconcile. The signed quote + its reference is
+    // what Accounts works from.
+    alert(`Contract executed.\n\nReference: ${client.ref}\n\nThis document is now permanently locked.\nForward the signed quote to accounts@ for invoicing.`);
+  };
   const handleSave=async()=>{
     let c=client;
+    setSaveState("saving");
     if(isDraftRef(client.ref)&&!issuing){
       setIssuing(true);
       const r=await issueRef(entity);
       setIssuing(false);
-      if(r){c={...client,ref:r};setClient(c);}
-      else{alert("Could not reach the server to issue a reference number. Check your connection and try again.");return;}
+      if(r){
+        c={...client,ref:r};setClient(c);
+        onSave({...buildSaveData(),client:c});
+        setSaveState("saved");setTimeout(()=>setSaveState("idle"),2500);
+        alert(`Saved.\n\nReference number issued: ${r}`);
+        return;
+      }
+      setSaveState("idle");
+      alert("Could not reach the server to issue a reference number. Check your connection and try again.");
+      return;
     }
     onSave({...buildSaveData(),client:c});
+    setSaveState("saved");setTimeout(()=>setSaveState("idle"),2500);
   };
 
   const handleImg=(id,e)=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setImgs(i=>({...i,[id]:ev.target.result}));r.readAsDataURL(f);};
@@ -1618,15 +1670,33 @@ function QuoteBuilder({initData,onSave,onBack}){
                 setRevised(false);
               }
               if(st==="Signed"){
-                const signed=sig&&(sig.summaryCanvas||sig.tcCanvas||sig.warrantyCanvas||sig.signCanvas);
-                if(!signed&&window.prompt("No client signature on file.\nEnter Director PIN to force Signed:")!==DIRECTOR_PIN)return;
-                if(!window.confirm("Mark as Signed? Fully locks the quote and issues an invoice number."))return;
+                // No PIN override. A contract is executed by signing it, on the Signature tab.
+                if(!canExecute){
+                  const missing=execChecks.filter(c=>!c.ok).map(c=>"  ·  "+c.label).join("\n");
+                  alert(`This quote is not fully signed and cannot be marked Signed.\n\nStill outstanding:\n${missing}\n\nOpen Preview → Signature to complete it, then press "Execute Contract".`);
+                  return;
+                }
+                executeContract();
+                return;
               }
               setStatus(st);
             }} style={{background:st===status?STATUS_COL[st]+"28":"transparent",color:st===status?STATUS_COL[st]:C.stone,border:`1px solid ${st===status?STATUS_COL[st]:C.stone+"44"}`,borderRadius:3,padding:"4px 9px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>{st}</button>
           ))}
           <div style={{width:1,height:14,background:C.stone+"44"}}/>
-          <button onClick={handleSave} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>Save</button>
+          {(()=>{
+            const pending=isDraftRef(client.ref);
+            const label=saveState==="saving"?"Saving…":saveState==="saved"?"✓ Saved":pending?"Save & Issue Ref":"Save";
+            return(
+              <button onClick={handleSave} disabled={saveState==="saving"}
+                title={pending?"This quote has no reference number yet. Save to issue one.":"Autosaved. Press to save immediately."}
+                style={{background:saveState==="saved"?C.success:pending?C.gold:C.creamD,
+                  border:`1px solid ${saveState==="saved"?C.success:pending?C.gold:C.border}`,borderRadius:3,
+                  padding:"5px 11px",fontSize:10,cursor:saveState==="saving"?"wait":"pointer",fontFamily:T.sans,
+                  color:saveState==="saved"?"#fff":pending?C.ink:C.stone,fontWeight:600,minWidth:52}}>
+                {label}
+              </button>
+            );
+          })()}
           <button onClick={()=>setShowEmail(e=>!e)} style={{background:showEmail?C.terra:C.creamD,border:`1px solid ${showEmail?C.terra:C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:showEmail?C.white:C.stone,fontWeight:600}}>✉ Email Note</button>
           {step==="preview"&&(
             <>
@@ -2311,6 +2381,44 @@ function QuoteBuilder({initData,onSave,onBack}){
             <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:5}}>Agreement & Authorisation</div>
             <div style={{fontSize:12,color:C.stone,marginBottom:18,lineHeight:1.7,fontFamily:T.sans}}>By executing this agreement, both parties confirm they have read, understood and agree to all terms, conditions, material quality standards and warranty schedule. This constitutes a binding contract upon dual signature.</div>
 
+            {/* ── EXECUTION PANEL ─────────────────────────────────────────── */}
+            {status==="Signed"?(
+              <div style={{background:"#F0F6F1",border:`1px solid ${C.success}`,borderRadius:4,padding:"16px 20px",marginBottom:20,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <span style={{color:C.success,fontSize:20}}>&#10003;</span>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:C.success,fontFamily:T.sans}}>CONTRACT EXECUTED</div>
+                  <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginTop:2}}>
+                    {client.ref} · Locked permanently. Send to accounts@ for invoicing. To change the scope, raise a Variation Order.
+                  </div>
+                </div>
+              </div>
+            ):(
+              <div style={{background:canExecute?"#F0F6F1":C.creamD,border:`1px solid ${canExecute?C.success:C.border}`,borderRadius:4,padding:"16px 20px",marginBottom:20}}>
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:1.2,color:canExecute?C.success:C.stone,fontFamily:T.sans,marginBottom:10}}>
+                  {canExecute?"READY TO EXECUTE":"NOT YET EXECUTABLE"}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:6,marginBottom:canExecute?14:0}}>
+                  {execChecks.map(c=>(
+                    <div key={c.key} style={{display:"flex",alignItems:"center",gap:7,fontSize:11,fontFamily:T.sans,color:c.ok?C.success:C.stone}}>
+                      <span style={{fontSize:12}}>{c.ok?"\u2713":"\u25CB"}</span>
+                      <span style={{textDecoration:c.ok?"none":"none",opacity:c.ok?1:0.7}}>{c.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {canExecute&&(
+                  <button onClick={executeContract}
+                    style={{background:C.success,color:"#fff",border:"none",borderRadius:4,padding:"11px 26px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:T.sans,letterSpacing:0.5}}>
+                    &#128274; Execute Contract &mdash; Lock
+                  </button>
+                )}
+                {!canExecute&&(
+                  <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginTop:9,fontStyle:"italic"}}>
+                    All three parties must sign. Complete every item above, and the Execute button will appear here.
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Page sign status */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:20}}>
               {[["All Items",sig.allItemsCanvas],["Summary",sig.summaryCanvas],["T&C",sig.tcCanvas],["Warranty",sig.warrantyCanvas]].map(([lbl,val])=>(
@@ -2905,7 +3013,6 @@ function QuoteBuilder({initData,onSave,onBack}){
                   <div style={{fontSize:9,color:C.stone,letterSpacing:1,marginBottom:3,fontFamily:T.sans}}>SCAN TO PAY — PAYNOW</div>
                   <div style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>UEN {PAYNOW_UEN}</div>
                   <div style={{fontSize:11,color:"#E8E0D4",marginTop:5,fontFamily:T.sans}}>Please quote reference <strong>{client.ref}</strong> in your payment remarks.</div>
-                  {invNo&&<div style={{fontSize:11,color:C.gold,marginTop:2,fontFamily:T.sans}}>Invoice No: {invNo}</div>}
                 </div>
               </div>
             )}
@@ -3008,11 +3115,8 @@ function App(){
   const newVO=parent=>{const q=blankQuote(parent);openQuote(q);};
   const saveQuote=async data=>{
     if(isDraftRef(data.client?.ref))return;   // never persist an unnumbered draft
-    // Issue invoice number the moment it is Signed
-    if(data.status==="Signed"&&!data.invNo){
-      const iv=await issueInv(data.entity);
-      if(iv)data={...data,invNo:iv};
-    }
+    // No invoice number is minted here. Invoicing belongs to QuickBooks — Accounts raises the
+    // invoice from the signed quote. Two systems issuing invoice numbers cannot be reconciled.
     const versions=[...loadVersions()];
     const idx=versions.findIndex(v=>v.id===data.id);
     if(idx>=0)versions[idx]=data;else versions.unshift(data);
