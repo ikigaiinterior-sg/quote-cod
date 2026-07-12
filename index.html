@@ -710,6 +710,8 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
           <div style={{fontSize:9,color:C.stone,letterSpacing:3,marginTop:2}}>CODSTUDIO — QUOTATION BUILDER v6.5</div>
         </div>
         <div style={{display:"flex",gap:8}}>
+          <span style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginRight:4}}>{SESSION?SESSION.name:""}</span>
+          <button onClick={()=>sb.auth.signOut().then(()=>window.location.reload())} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 12px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Sign out</button>
           {USER_ROLE>=ROLES.director&&<button onClick={onAdmin} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⚙ Admin</button>}
           <button onClick={()=>alert("Commercial quotes — coming soon in v7.")} style={{background:"transparent",border:`1px solid ${C.gold}66`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.gold,fontFamily:T.sans,fontWeight:600}}>🏢 Commercial</button>
           <button onClick={onNew} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans,letterSpacing:1}}>+ New Quote</button>
@@ -917,7 +919,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[entity,setEntity]=useState(initData.entity||"ikigai");
   const ent=ENTITIES.find(e=>e.id===entity);
   const[client,setClient]=useState(initData.client||{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()});
-  const[idStaff,setIdStaff]=useState(initData.idStaff||"");
+  const[idStaff,setIdStaff]=useState(initData.idStaff||(SESSION?SESSION.name:""));
   const[status,setStatus]=useState(initData.status||"Draft");
   const invNo=initData.invNo||null;
   const[unitSqft,setUnitSqft]=useState(initData.unitSqft||0);
@@ -1408,9 +1410,8 @@ function QuoteBuilder({initData,onSave,onBack}){
             <div>
               <label style={sL}>ID In-Charge</label>
               <select style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 11px",fontSize:13,fontFamily:T.sans,background:C.cream,color:C.ink,boxSizing:"border-box"}}
-                value={idStaff} onChange={e=>setIdStaff(e.target.value)} disabled={isLocked}>
-                <option value="">— Select Designer —</option>
-                {Object.values(STAFF).filter((v,i,a)=>a.findIndex(x=>x.mail===v.mail)===i).map(v=><option key={v.mail} value={v.name}>{v.name}</option>)}
+                value={idStaff} disabled title="Locked to your login">
+                <option value={idStaff}>{idStaff||"—"}</option>
               </select>
             </div>
           </div>
@@ -1790,7 +1791,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div style={{padding:"16px",background:C.cream,borderRadius:4,border:`1px solid ${C.border}`}}>
                 <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>INTERIOR DESIGNER IN-CHARGE</div>
                 <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>Name</div>
-                <input value={idStaff} onChange={e=>setIdStaff(e.target.value)} disabled={isFullyLocked}
+                <input value={idStaff} readOnly disabled
                   style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:7,boxSizing:"border-box"}}/>
                 <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
                 <input value={sig.idDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,idDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
@@ -2409,10 +2410,16 @@ function App(){
   const[authed,setAuthed]=useState(false);
   const[denied,setDenied]=useState("");
   useEffect(()=>{
-    // LOGIN DISABLED until Azure is configured. Open access, director role.
-    USER_ROLE=ROLES.director;
-    setAuthed(true);
-    cloudPull().then(()=>setBooted(true));
+    sb.auth.getSession().then(({data})=>{
+      const u=data?.session?.user;
+      if(!u){setBooted(true);return;}
+      const email=(u.email||u.user_metadata?.email||"").toLowerCase();
+      const s=staffByEmail(email);
+      if(!s){setDenied(email||"unknown account");setBooted(true);return;}
+      SESSION={...s,email};USER_ROLE=s.role;
+      setAuthed(true);
+      cloudPull().then(()=>setBooted(true));
+    });
   },[]);
   const signOut=async()=>{await sb.auth.signOut();window.location.reload();};
   const openQuote=q=>{setActiveQuote(q);setScreen("builder");};
