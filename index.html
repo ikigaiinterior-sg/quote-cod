@@ -144,15 +144,14 @@ const DEFAULT_TRADES=[
     {id:"1.7",desc:"Japandi + Luxury Style Theme – with ornaments",unit:"LS",price:1000,addon:true},
   ]},
   {id:2,code:"02",name:"Pre & Post Renovation",noZone:true,items:[
-    {id:"2.1",desc:"Hacking permit application (Condo)",unit:"LS",price:200},
+    {id:"2.1",desc:"Permit to Work (PTW) submission & processing",unit:"LS",price:350},
     {id:"2.2",desc:"PE endorsement (subject to authority requirements)",unit:"LS",price:600},
     {id:"2.3",desc:"Project management & site supervision with project dashboard",unit:"LS",price:2000},
     {id:"2.4",desc:"Floor protection – corrugated paper",unit:"LS",price:323},
     {id:"2.5",desc:"Final clean upon completion",unit:"Trip",price:303},
     {id:"2.6",desc:"General clean – extra trip",unit:"Trip",price:193,addon:true},
     {id:"2.7",desc:"Detail cleaning – with styling package",unit:"Trip",price:0,addon:true},
-    {id:"2.8",desc:"Permit to Work (PTW) submission & processing",unit:"LS",price:800},
-    {id:"2.9",desc:"Hoarding & site protection to landlord requirement",unit:"ft run",price:35},
+    {id:"2.8",desc:"Hoarding & site protection c/w door and lock-set",unit:"sqft",price:12},
   ]},
   {id:3,code:"03",name:"Demolition",noZone:true,note:"Supply labour & tools; proper disposal off-site",items:[
     {id:"3.1",desc:"Concrete walls up to 9ft height – internal",unit:"ft run",price:55,zone:"Whole House"},
@@ -295,7 +294,6 @@ const DEFAULT_TRADES=[
     {id:"8.8",desc:"Install partition wall (1-sided)",unit:"sqft",price:4},
     {id:"8.9",desc:"Install partition wall (2-sided)",unit:"sqft",price:5},
     {id:"8.10",desc:"Install rockwool 40KG",unit:"sqft",price:1},
-    {id:"8.11",desc:"Install rockwool 60KG",unit:"sqft",price:1},
     {id:"8.12",desc:"Install rockwool 80KG",unit:"sqft",price:2},
   ]},
   {id:9,code:"09",name:"Carpentry",note:"Solid plywood; high-pressure laminate; soft-close hinges; ABS trimmed edges.",zones:["Entrance/Foyer","Living/Dining","Kitchen","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Guest Room","Master Bath","Bath 2","Balcony","Study"],items:[
@@ -419,7 +417,7 @@ const DEFAULT_TRADES=[
     {id:"12.8",desc:"Textured lime wash",unit:"LS",price:682},
     {id:"12.9",desc:"Wainscoting panels (per L2m section)",unit:"Pc",price:50,addon:true},
   ]},
-  {id:13,code:"13",name:"Miscellaneous",noZone:true,items:[
+  {id:13,code:"13",name:"Miscellaneous",noZone:true,editRate:true,note:"Rates in this trade are adjustable — key the agreed rate directly into the Unit Rate field.",items:[
     {id:"13.1",desc:"Smart lock installation",unit:"no.",price:280},
     {id:"13.2",desc:"TV mounting",unit:"no.",price:110},
     {id:"13.3",desc:"Curtain track installation",unit:"M",price:35},
@@ -581,7 +579,7 @@ const ItemRow=React.memo(function ItemRow({
   item,tradeId,isDupe,isCustom,customObj,
   isOn,qty,ep,tier,zone,img,isLocked,
   onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,
-  poaUnlocked,poaEdited,poaVal,onPoaUnlock,onPoaChange,poaNeedsApp,poaApproved,
+  poaUnlocked,poaEdited,poaVal,onPoaUnlock,onPoaChange,poaNeedsApp,poaApproved,editRate,
   canReorder,onMoveUp,onMoveDown,onMoveZone,
   dragHandlers,dragOver,flash,onDuplicate,
   isVO,isRemoved,onRemove,
@@ -665,7 +663,14 @@ const ItemRow=React.memo(function ItemRow({
         <div style={{fontSize:12,color:C.stone,textAlign:"right",paddingTop:4,fontFamily:T.sans,wordBreak:"break-word"}}>{item.unit}</div>
         {/* PRICE — POA: type freely; greyed + unprintable until senior/director approves */}
         <div style={{fontFamily:T.serif,fontSize:15,textAlign:"right",color:ep>0?C.ink:C.stone,paddingTop:4}}>
-          {(item.poa||poaEdited||ep<=0)?(
+          {editRate?(
+            /* Adjustable-rate trade (Miscellaneous): any designer may key the agreed rate.
+               No approval gate — the card price is only a starting point. */
+            <input type="text" inputMode="decimal" disabled={isLocked}
+              value={poaVal!==undefined&&poaVal!==null&&poaVal!==""?poaVal:String(item.price)}
+              onChange={e=>{const v=e.target.value;if(/^\d*\.?\d{0,2}$/.test(v)||v==="")onPoaChange(v);}}
+              style={{width:74,border:`1px solid ${C.gold}`,borderRadius:3,padding:"3px 5px",fontSize:13,fontFamily:T.serif,textAlign:"right",background:C.cream,color:C.ink}}/>
+          ):(item.poa||poaEdited||ep<=0)?(
             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
               <input type="text" inputMode="decimal" disabled={isLocked}
                 value={poaVal!==undefined&&poaVal!==null?poaVal:""}
@@ -1049,6 +1054,15 @@ function QuoteBuilder({initData,onSave,onBack}){
   const dragIdRef=useRef(null);
   const dragTargetRef=useRef(null);
   const[topbarH,setTopbarH]=useState(52);
+  // Topbar wraps at narrow widths, so its height is not fixed. Measure it and keep the
+  // trade nav pinned directly beneath — otherwise the nav slides under the bar and vanishes.
+  useEffect(()=>{
+    const measure=()=>{const el=document.querySelector(".codstudio-topbar");if(el)setTopbarH(el.offsetHeight);};
+    measure();
+    window.addEventListener("resize",measure);
+    const t=setTimeout(measure,300);
+    return()=>{window.removeEventListener("resize",measure);clearTimeout(t);};
+  },[]);
   // AUTO-SCROLL while dragging: when a native drag hovers near the top/bottom edge of the
   // viewport, gently scroll the page so off-screen zones become reachable as drop targets.
   useEffect(()=>{
@@ -1087,8 +1101,11 @@ function QuoteBuilder({initData,onSave,onBack}){
   const getEP=item=>{const manual=poaPrices[item.id];if(manual!==undefined&&manual!==null&&manual!=="")return parseFloat(manual)||0;const t=getTier(item.id);if(!item.carpentry||t==="base")return item.price;return Math.round(item.price*FINISH[t].mult*100)/100;};
   const isPoaEdited=id=>{const v=poaPrices[id];return v!==undefined&&v!==null&&v!=="";};
   const isPoaApproved=id=>poaApproved[id]===true;
+  // Trades flagged editRate (Miscellaneous) are freely adjustable by any designer —
+  // a keyed rate there is NOT a POA and never needs approval.
+  const FREE_RATE_IDS=useMemo(()=>{const set=new Set();TRADES.filter(t=>t.editRate).forEach(t=>t.items.forEach(i=>set.add(i.id)));return set;},[]);
   // A line needs approval if it has a manually-keyed POA price that is not yet approved.
-  const poaNeedsApproval=id=>isPoaEdited(id)&&!isPoaApproved(id);
+  const poaNeedsApproval=id=>!FREE_RATE_IDS.has(id)&&isPoaEdited(id)&&!isPoaApproved(id);
   const approvePoaPin=()=>{if(poaPinBuf===DIRECTOR_PIN){if(poaPinPrompt)setPoaApproved(a=>({...a,[poaPinPrompt]:true}));setPoaPinBuf("");setPoaPinPrompt(null);}else{alert("Incorrect Director PIN");}};
   const requestPoaApproval=id=>setPoaPinPrompt(id);
   const tryPoaPin=()=>{if(poaPinBuf===DIRECTOR_PIN){setPoaUnlocked(true);setPoaPinBuf("");}else{alert("Incorrect Director PIN");}};
@@ -1135,9 +1152,18 @@ function QuoteBuilder({initData,onSave,onBack}){
   // OPTION A: trade/zone toggles now EXPAND to browse — they NEVER mass-select items.
   // Item selection is manual, per line. The toggle still shows "on" when any line inside
   // is selected (read via tradeOn/zoneOn), but clicking it only opens/closes the section.
+  // Master trade toggle: ON switches every line in the trade on, OFF switches every line off.
+  // Individual line toggles remain fully independent.
   const toggleTM=t=>{
-    const isOpen=!!openTrades[t.id];
-    setOpenTrades(o=>({...o,[t.id]:!isOpen}));
+    const turnOn=!tradeOn(t);
+    const ids=tradeIDs(t);
+    setItemOn(o=>{const n={...o};ids.forEach(id=>{n[id]=turnOn;});return n;});
+    if(turnOn){
+      setOpenTrades(o=>({...o,[t.id]:true}));
+      if(!t.noZone){
+        setOpenZones(o=>{const n={...o};[...t.items,...dupes.filter(d=>d.tradeId===t.id)].forEach(i=>{n[zK(t.id,getZone(i))]=true;});return n;});
+      }
+    }
   };
   const toggleZM=(t,z)=>{
     const isOpen=isZO(t.id,z);
@@ -1701,6 +1727,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                         onPoaChange={v=>setPoaPrices(p=>({...p,[item.id]:v}))}
                         poaNeedsApp={poaNeedsApproval(item.id)}
                         poaApproved={isPoaApproved(item.id)}
+                        editRate={!!trade.editRate}
                         dragHandlers={pointerDragHandlers(item,trade)}
                         dragOver={dragId&&dragTarget?.zone===getZone(item)&&dragId!==item.id}
                         isVO={isVO} isRemoved={!!removalOn[item.id]} onRemove={()=>setRemovalOn(r=>({...r,[item.id]:!r[item.id]}))}
