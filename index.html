@@ -22,23 +22,62 @@ canvas{touch-action:none;}
    topbar, edit grid, qty inputs, nav, signature/payment tabs — carries .no-print. */
 body.printing{background:#fff;}
 body.printing .no-print{display:none!important;}
-/* Only sections explicitly marked to print in this scope are shown; others stay hidden
-   so they never generate blank pages. Visible sections break onto their own page. */
-body.printing .print-section{display:block!important;page-break-after:always;page-break-inside:auto;border:none!important;border-radius:0!important;box-shadow:none!important;}
-body.printing .print-section:last-of-type{page-break-after:auto;}
-body.printing .print-section:empty{display:none!important;page-break-after:auto;}
-/* Summary-only scope: hide everything except the summary document */
-body.printing.summary-only .print-section{display:none!important;page-break-after:auto;}
-body.printing.summary-only .print-section.summary-doc{display:block!important;page-break-after:auto;}
-/* Keep table rows and signature blocks from splitting across a page */
-body.printing .pr-row,body.printing tr,body.printing .pr-keep{page-break-inside:avoid;}
+
+/* ── PRINT LAYOUT ─────────────────────────────────────────────────────────────
+   Sections flow continuously and only break when they must. Previously every
+   section carried `page-break-after:always`, which forced a break after each one
+   and routinely produced a trailing blank page. Now: break BEFORE a new section
+   (never after), so the last page ends where the content ends.                */
+body.printing .print-section{
+  display:block!important;
+  border:none!important;border-radius:0!important;box-shadow:none!important;
+  background:#fff!important;
+  break-before:page;page-break-before:always;
+  break-after:auto;page-break-after:auto;
+  break-inside:auto;
+}
+body.printing .print-section:first-of-type{break-before:auto;page-break-before:auto;}
+body.printing .print-section:empty{display:none!important;break-before:auto;page-break-before:auto;}
+
+/* Summary-only scope */
+body.printing.summary-only .print-section{display:none!important;}
+body.printing.summary-only .print-section.summary-doc{display:block!important;break-before:auto;page-break-before:auto;}
+
+/* Keep atomic blocks whole — rows, signature panels, totals, cards */
+body.printing tr,
+body.printing .pr-row,
+body.printing .pr-keep,
+body.printing canvas{break-inside:avoid;page-break-inside:avoid;}
+
+/* Orphan/widow control so tables don't leave one stray line on a page */
+body.printing p,body.printing div{orphans:3;widows:3;}
+
+/* Kill on-screen chrome that wastes vertical space on paper */
+body.printing input,body.printing textarea,body.printing select{
+  border:none!important;background:transparent!important;padding:0!important;
+  -webkit-appearance:none;appearance:none;resize:none!important;
+}
+body.printing textarea{overflow:hidden!important;height:auto!important;min-height:0!important;}
+/* Tighten the paper layout — screen padding is generous, paper is not */
+body.printing .print-section > div{margin-bottom:8px!important;}
+body.printing canvas{max-height:64px!important;}
+/* Empty signature canvases still occupy a box on paper — collapse the dashed frame */
+body.printing .print-section [style*="dashed"]{border-style:solid!important;border-color:#DDD!important;}
+
 @media print{
   .no-print{display:none!important;}
-  body{background:#fff;}
-  .print-section{display:block!important;page-break-after:always;border:none!important;border-radius:0!important;box-shadow:none!important;}
-  .print-section:last-of-type{page-break-after:auto;}
-  .print-section:empty{display:none!important;}
-  @page{margin:14mm;}
+  body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .print-section{
+    display:block!important;background:#fff!important;
+    border:none!important;border-radius:0!important;box-shadow:none!important;
+    break-before:page;page-break-before:always;
+    break-after:auto;page-break-after:auto;
+  }
+  .print-section:first-of-type{break-before:auto;page-break-before:auto;}
+  .print-section:empty{display:none!important;break-before:auto;page-break-before:auto;}
+  tr,.pr-row,.pr-keep,canvas{break-inside:avoid;page-break-inside:avoid;}
+  p,div{orphans:3;widows:3;}
+  @page{margin:14mm;size:A4;}
 }
 ::-webkit-scrollbar{width:6px;}
 ::-webkit-scrollbar-track{background:#F8F4EF;}
@@ -856,10 +895,17 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
     onNewVO(updParent);
   };
   const[search,setSearch]=useState("");
-  const parents=live.filter(q=>!q.isVO).filter(q=>{
+  // Owner filter. Everyone can still see every quote — this only narrows the view.
+  const[owner,setOwner]=useState("all");
+  const owners=useMemo(()=>{
+    const set=new Set(live.map(q=>q.idStaff).filter(Boolean));
+    return Array.from(set).sort();
+  },[versions]);
+  const countFor=n=>live.filter(q=>!q.isVO&&q.idStaff===n).length;
+  const parents=live.filter(q=>!q.isVO).filter(q=>owner==="all"||q.idStaff===owner).filter(q=>{
     if(!search.trim())return true;
     const s=search.toLowerCase();
-    return(q.name||"").toLowerCase().includes(s)||(q.client?.name||"").toLowerCase().includes(s)||(q.projectName||"").toLowerCase().includes(s)||(q.client?.ref||"").toLowerCase().includes(s);
+    return(q.name||"").toLowerCase().includes(s)||(q.client?.name||"").toLowerCase().includes(s)||(q.projectName||"").toLowerCase().includes(s)||(q.client?.ref||"").toLowerCase().includes(s)||(q.idStaff||"").toLowerCase().includes(s);
   });
   const vosOf=id=>live.filter(q=>q.parentId===id);
   return(
@@ -919,9 +965,27 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
         )}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.ink}}>All Quotations</div>
-          <input placeholder="Search by name, client, ref…" value={search} onChange={e=>setSearch(e.target.value)}
-            style={{border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 14px",fontSize:12,fontFamily:T.sans,background:C.cream,color:C.ink,width:240,outline:"none"}}/>
+          <input placeholder="Search by name, client, ref, designer…" value={search} onChange={e=>setSearch(e.target.value)}
+            style={{border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 14px",fontSize:12,fontFamily:T.sans,background:C.cream,color:C.ink,width:260,outline:"none"}}/>
         </div>
+        {owners.length>0&&(
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14,alignItems:"center"}}>
+            <span style={{fontSize:9,letterSpacing:1.5,color:C.stone,fontWeight:700,fontFamily:T.sans,marginRight:5}}>DESIGNER</span>
+            <button onClick={()=>setOwner("all")}
+              style={{background:owner==="all"?C.ink:C.white,color:owner==="all"?C.gold:C.stone,border:`1px solid ${owner==="all"?C.gold:C.border}`,borderRadius:14,padding:"4px 13px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>
+              All <span style={{opacity:.65}}>{live.filter(q=>!q.isVO).length}</span>
+            </button>
+            {owners.map(n=>{
+              const on=owner===n;
+              return(
+                <button key={n} onClick={()=>setOwner(on?"all":n)}
+                  style={{background:on?C.ink:C.white,color:on?C.gold:C.stone,border:`1px solid ${on?C.gold:C.border}`,borderRadius:14,padding:"4px 13px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>
+                  {n} <span style={{opacity:.65}}>{countFor(n)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {parents.length===0?(
           <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"48px",textAlign:"center"}}>
             <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.stone,marginBottom:8}}>No quotes yet</div>
@@ -945,6 +1009,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
                       <div style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>
                         {q.client?.name&&<span style={{marginRight:12}}>{q.client.name}</span>}
                         <span style={{marginRight:12}}>{q.client?.ref||"—"}</span>
+                        {q.idStaff&&<span style={{marginRight:12,color:C.gold,fontWeight:600}}>{q.idStaff}</span>}
                         <span>Updated {q.updatedAt}</span>
                       </div>
                     </div>
@@ -1431,12 +1496,9 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Full (all pages) needs Director PIN — unless status is Signed, then it is free.
   const printScopeRef=useRef("full");
   const runPrint=scope=>{printScopeRef.current=scope;window.print();};
-  const doPrintSummary=()=>{runPrint(status==="Signed"?"full":"summary");};
-  const doFullPrint=()=>{
-    if(status==="Signed"){runPrint("full");return;}
-    if(printPin===DIRECTOR_PIN){setShowFullPrintPin(false);setPrintPin("");runPrint("full");}
-    else alert("Incorrect Director PIN");
-  };
+  const doPrintSummary=()=>{runPrint("summary");};
+  // Full print is unlocked — this IS how quotes are issued to clients.
+  const doFullPrint=()=>{runPrint("full");};
   // Reliable cross-browser print filtering: `beforeprint` fires for window.print()
   // AND native Ctrl/Cmd+P. We flag <body class="printing"> so CSS reveals only the
   // selected-items .print-section document and hides the live edit page; `afterprint`
@@ -1509,12 +1571,12 @@ function QuoteBuilder({initData,onSave,onBack}){
           ))}
           <div style={{width:1,height:14,background:C.stone+"44"}}/>
           <button onClick={handleSave} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>Save</button>
-          <button onClick={()=>setShowEmail(e=>!e)} style={{background:showEmail?C.terra:C.creamD,border:`1px solid ${showEmail?C.terra:C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:showEmail?C.white:C.stone,fontWeight:600}}>✉ Email</button>
+          <button onClick={()=>setShowEmail(e=>!e)} style={{background:showEmail?C.terra:C.creamD,border:`1px solid ${showEmail?C.terra:C.border}`,borderRadius:3,padding:"5px 11px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:showEmail?C.white:C.stone,fontWeight:600}}>✉ Email Note</button>
           {step==="preview"&&(
             <>
               <OBtn ch="← Edit" onClick={()=>setStep("quote")} col={C.gold} sm/>
-              <button onClick={doPrintSummary} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🖨 {status==="Signed"?"Print":"Print Summary"}</button>
-              <button onClick={()=>{if(status==="Signed")doFullPrint();else setShowFullPrintPin(p=>!p);}} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:status==="Signed"?C.success:C.stone,fontWeight:600}}>{status==="Signed"?"🖨 Full Print":"🔒 Full Print"}</button>
+              <button onClick={doPrintSummary} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>🖨 Summary Only</button>
+              <button onClick={doFullPrint} title="Print the full quotation — all pages. Save as PDF to email the client." style={{background:C.gold,border:"none",borderRadius:3,padding:"5px 12px",fontSize:10,cursor:"pointer",fontFamily:T.sans,color:C.ink,fontWeight:600}}>🖨 Full Print / PDF</button>
             </>
           )}
           {step==="quote"&&subtotal>0&&(
@@ -1551,16 +1613,6 @@ function QuoteBuilder({initData,onSave,onBack}){
           <button onClick={()=>{setPoaPinPrompt(null);setPoaPinBuf("");}} style={{marginTop:12,background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans,textDecoration:"underline"}}>Cancel</button>
         </div>
       )}
-      {/* FULL PRINT PIN PROMPT */}
-      {showFullPrintPin&&(
-        <div className="no-print" style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"14px 18px",margin:"8px 16px 0",display:"flex",gap:8,alignItems:"center"}}>
-          <span style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>Director PIN to unlock full print:</span>
-          <input type="password" value={printPin} onChange={e=>setPrintPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doFullPrint()} placeholder="PIN" style={{width:100,border:`1px solid ${C.border}`,borderRadius:3,padding:"5px 8px",fontSize:12,fontFamily:T.sans}}/>
-          <Btn ch="Unlock & Print" onClick={doFullPrint} sm/>
-          <button onClick={()=>{setShowFullPrintPin(false);setPrintPin("");}} style={{background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans}}>Cancel</button>
-        </div>
-      )}
-
       {/* EMAIL PANEL */}
       {showEmail&&(
         <div className="no-print" style={{background:"#FFFDF5",border:`1px solid ${C.gold}55`,borderRadius:4,padding:"16px 20px",margin:"8px 16px 0"}}>
@@ -1581,7 +1633,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             When sent, this quote will be shared as a read-only link. Auto CC: <strong>{staffMail(idStaff)}</strong> · <strong>admin@ikigaiinterior.com</strong> · <strong>work@ikigaiinterior.com</strong> — sender is locked to your login.
           </div>
           <div style={{display:"flex",gap:8}}>
-            <a href={`mailto:${client.email||""}?cc=${client.email2?client.email2+",":""}${staffMail(idStaff)},${CC_FIXED}&subject=Quotation ${client.ref} — Ikigai Interior&body=Dear ${client.name||""},\n\nPlease find your quotation (Ref: ${client.ref}) attached for review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd`}
+            <a href={`mailto:${client.email||""}?cc=${client.email2?client.email2+",":""}${staffMail(idStaff)},${CC_FIXED}&subject=Quotation ${client.ref} — Ikigai Interior&body=Dear ${client.name||""},\n\nPlease find your quotation (Ref: ${client.ref}) enclosed for your review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd`}
               style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"8px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,textDecoration:"none",display:"inline-block"}}>
               ✉ Open in Mail App
             </a>
@@ -2434,7 +2486,8 @@ function QuoteBuilder({initData,onSave,onBack}){
           const sorStyle=`
             @media print {
               .no-print { display: none !important; }
-              .sor-page { page-break-after: always; }
+              .sor-page { break-before: page; page-break-before: always; break-after: auto; page-break-after: auto; }
+              .sor-page:first-of-type { break-before: auto; page-break-before: auto; }
               body { background: #fff; }
             }
           `;
