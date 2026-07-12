@@ -118,7 +118,7 @@ const PROJECT_TYPES={
 const PT=k=>PROJECT_TYPES[k]||PROJECT_TYPES.condo;
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
 const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier",sub:"Non-GST",gst:false}];
-const PAY_PRESETS={standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
+const PAY_PRESETS={vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
 const ROLES={staff:1,senior:2,director:3};
 let SESSION=null;            // {name,email,role}
 let USER_ROLE=ROLES.staff;   // set on login
@@ -472,6 +472,35 @@ const saveTradeOverride=(id,fields)=>{
   }catch{}
 };
 
+// Pure recompute of a saved quote's total — used to snapshot the parent value onto a VO.
+const calcQuoteTotal=q=>{
+  if(!q)return 0;
+  const TR=loadTrades();
+  const ent=ENTITIES.find(e=>e.id===(q.entity||"ikigai"))||ENTITIES[0];
+  const on=id=>q.itemOn&&q.itemOn[id]===true;
+  const qty=id=>parseFloat((q.qtys||{})[id])||0;
+  const poa=id=>{const v=(q.poaPrices||{})[id];return(v!==undefined&&v!==null&&v!=="")?(parseFloat(v)||0):null;};
+  const okPoa=id=>{const v=(q.poaPrices||{})[id];const edited=(v!==undefined&&v!==null&&v!=="");return!edited||((q.poaApproved||{})[id]===true);};
+  const ep=i=>{const m=poa(i.id);if(m!==null)return m;const t=(q.tiers||{})[i.id]||"base";if(!i.carpentry||t==="base")return i.price;return Math.round(i.price*FINISH[t].mult*100)/100;};
+  let sum=0;
+  // design
+  const sqft=q.unitSqft||0;
+  DESIGN_ITEMS_CFG.forEach(i=>{
+    if(!(q.designOn||{})[i.id])return;
+    if(i.fixedPrice!==null)sum+=i.fixedPrice;
+    else if(i.basis==="raw")sum+=Math.round(sqft*(i.psfPct||0));
+    else sum+=Math.round(sqft*DESIGN_PSF_RATE*(i.psfPct||0));
+  });
+  TR.forEach(t=>{
+    t.items.forEach(i=>{if(on(i.id)&&okPoa(i.id))sum+=qty(i.id)*ep(i);});
+    (q.dupes||[]).filter(d=>d.tradeId===t.id).forEach(d=>{if(on(d.id)&&okPoa(d.id))sum+=qty(d.id)*d.price;});
+    (q.customs||[]).filter(c=>c.tradeId===t.id&&c.approved).forEach(c=>{if(on(c.id))sum+=(parseFloat((q.qtys||{})[c.id])||1)*c.price;});
+  });
+  const d=(q.discOk?(parseFloat(q.disc)||0):0);
+  const after=sum-d;
+  return ent.gst?after*1.09:after;
+};
+
 const blankQuote=(base=null,ptype="condo")=>({
   id:Date.now(),
   name:base?`${base.projectName||base.name} — VO-${(base.voCount||0)+1}`:"New Quote",
@@ -481,11 +510,14 @@ const blankQuote=(base=null,ptype="condo")=>({
   entity:base?.entity||"ikigai",status:"Draft",
   projectType:base?.projectType||ptype,
   unitSqft:base?.unitSqft||0,designOn:{},
-  client:base?{...base.client,ref:genRef(),date:todayStr()}:{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()},
+  client:base?{...base.client,ref:`${base.client?.ref||"REF"}-VO${(base.voCount||0)+1}`,date:todayStr()}:{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()},
   idStaff:base?.idStaff||"",
+  parentRef:base?.client?.ref||null,
+  parentTotal:base?.parentTotal_snapshot??null,
+  voAdds:[],voOmits:[],voApproved:false,
   qtys:{},itemOn:{},tiers:{},notes:{},zoneOverride:{},dupes:[],customs:[],removalOn:{},
   openTrades:{1:true},openZones:{},
-  payKey:base?.payKey||"standard",customPay:base?.customPay||[],
+  payKey:base?"vo100":(base?.payKey||"standard"),customPay:base?.customPay||[],
   disc:"",discOk:false,usePaypal:false,usePaynow:false,
   sig:{clientName:"",date:todayStr(),agreed:false,directorDate:todayStr(),idDate:todayStr(),
     summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",
@@ -757,7 +789,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
   };
   const createVO=q=>{
     const voCount=(q.voCount||0)+1;
-    const updParent={...q,voCount};
+    const updParent={...q,voCount,parentTotal_snapshot:calcQuoteTotal(q)};
     const updated=versions.map(x=>x.id===q.id?updParent:x);
     saveVersions(updated);setVersions(updated);
     onNewVO(updParent);
@@ -1006,6 +1038,19 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[usePaynow,setUsePaynow]=useState(initData.usePaynow||false);
   const[customs,setCustoms]=useState(initData.customs||[]);
   const[removalOn,setRemovalOn]=useState(initData.removalOn||{});
+  // ── VO STATE — freehand additions & omissions. Parent is never touched.
+  const[voAdds,setVoAdds]=useState(initData.voAdds||[]);
+  const[voOmits,setVoOmits]=useState(initData.voOmits||[]);
+  const[voApproved,setVoApproved]=useState(initData.voApproved||false);
+  const[voPinBuf,setVoPinBuf]=useState("");
+  const[showVoPin,setShowVoPin]=useState(false);
+  const parentRef=initData.parentRef||null;
+  const parentTotal=initData.parentTotal??null;
+  const voBlank=()=>({id:`v${Date.now()}${Math.random().toString(36).slice(2,5)}`,desc:"",qty:"1",unit:"LS",rate:""});
+  const voLineAmt=l=>(parseFloat(l.qty)||0)*(parseFloat(l.rate)||0);
+  const voAddSub=useMemo(()=>voAdds.reduce((a,l)=>a+voLineAmt(l),0),[voAdds]);
+  const voOmitSub=useMemo(()=>voOmits.reduce((a,l)=>a+voLineAmt(l),0),[voOmits]);
+  const voNet=voAddSub-voOmitSub;
   const[customForm,setCustomForm]=useState(null);
   const[sig,setSig]=useState(initData.sig||{clientName:"",date:"",agreed:false,directorDate:"",idDate:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""});
   const[showEmail,setShowEmail]=useState(false);
@@ -1121,12 +1166,13 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig,voAdds,voOmits,voApproved]);
 
   const buildSaveData=()=>({
     invNo,
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
+    isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,
     openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved
   });
   const[issuing,setIssuing]=useState(false);
@@ -1243,7 +1289,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const designCustoms=useMemo(()=>customs.filter(c=>c.tradeId===1),[customs]);
   const designCustomSub=useMemo(()=>designCustoms.filter(c=>c.approved&&isOn(c.id)).reduce((s,c)=>s+(parseFloat(qtys[c.id])||1)*c.price,0),[designCustoms,itemOn,qtys]);
   const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0)+designCustomSub,[designOn,unitSqft,projectType,designCustomSub]);
-  const subtotal=designSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0);
+  const subtotal=isVO?voNet:(designSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0));
   const discAmt=discOk?(parseFloat(disc)||0):0;
   const afterDisc=subtotal-discAmt;
   const gstAmt=gst?afterDisc*0.09:0;
@@ -1344,7 +1390,10 @@ function QuoteBuilder({initData,onSave,onBack}){
           {step==="quote"&&["Sent","Signed"].map(st=>(
             <button key={st} onClick={()=>{
               if(st===status)return;
-              if(st==="Sent"&&!window.confirm("Mark as Sent? Items will be locked."))return;
+              if(st==="Sent"){
+                if(isVO&&!voApproved){alert("This Variation Order must be approved by a Director before it can be sent.");return;}
+                if(!window.confirm("Mark as Sent? Items will be locked."))return;
+              }
               if(st==="Signed"){
                 const signed=sig&&(sig.summaryCanvas||sig.tcCanvas||sig.warrantyCanvas||sig.signCanvas);
                 if(!signed&&window.prompt("No client signature on file.\nEnter Director PIN to force Signed:")!==DIRECTOR_PIN)return;
@@ -1437,7 +1486,135 @@ function QuoteBuilder({initData,onSave,onBack}){
       )}
 
       <div style={{maxWidth:1160,margin:"0 auto",padding:"16px 14px"}}>
-      {step==="quote"&&(<>
+      {step==="quote"&&isVO&&(<>
+        {/* ══ VO MODE — freehand. Trade grid hidden. Parent untouched. ══ */}
+        <div className="no-print" style={{background:C.ink,borderRadius:6,padding:"18px 22px",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:5}}>
+                <span style={{background:C.terra,color:"#fff",borderRadius:3,padding:"2px 9px",fontSize:10,fontWeight:700,letterSpacing:1}}>VO-{voNumber}</span>
+                <span style={{fontFamily:T.serif,fontSize:19,fontWeight:300,color:C.gold}}>Variation Order</span>
+              </div>
+              <div style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>Ref <strong style={{color:"#E8E0D4"}}>{client.ref}</strong> · Parent contract <strong style={{color:"#E8E0D4"}}>{parentRef||"—"}</strong></div>
+              <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:3}}>This is a standalone document. The parent contract is not altered.</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:9,letterSpacing:2,color:C.stone,fontFamily:T.sans}}>ORIGINAL CONTRACT SUM</div>
+              <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,color:"#E8E0D4"}}>{parentTotal!=null?fmt(parentTotal):"—"}</div>
+              <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:2}}>read-only reference</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ADDITIONS */}
+        {(()=>{
+          const T_ADD=[["ADDITIONS (+)",C.success,voAdds,setVoAdds,"add"],["OMISSIONS (−)",C.danger,voOmits,setVoOmits,"omit"]];
+          return T_ADD.map(([title,col,list,setter,kind])=>(
+            <div key={kind} className="no-print" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:10,overflow:"hidden"}}>
+              <div style={{padding:"10px 16px",background:kind==="add"?"#F0F6F1":"#FBF0F0",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontFamily:T.sans,fontSize:11,fontWeight:700,letterSpacing:1.5,color:col}}>{title}</span>
+                <span style={{fontFamily:T.serif,fontSize:16,color:col}}>{kind==="add"?fmt(voAddSub):(voOmitSub>0?`(${fmt(voOmitSub)})`:fmt(0))}</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 62px 74px 92px 96px 32px",gap:6,background:C.creamD,padding:"5px 16px"}}>
+                {["DESCRIPTION","QTY","UNIT","RATE","AMOUNT",""].map((h,i)=>(
+                  <div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>0&&i<5?"right":"left"}}>{h}</div>
+                ))}
+              </div>
+              {list.length===0&&(
+                <div style={{padding:"18px 16px",textAlign:"center",fontSize:11,color:C.stone,fontFamily:T.sans}}>
+                  No {kind==="add"?"additions":"omissions"} yet.
+                </div>
+              )}
+              {list.map((l,idx)=>(
+                <div key={l.id} style={{display:"grid",gridTemplateColumns:"1fr 62px 74px 92px 96px 32px",gap:6,padding:"7px 16px",borderBottom:"1px solid #F5F0E8",alignItems:"center"}}>
+                  <input value={l.desc} disabled={isLocked} placeholder="Describe the variation…"
+                    onChange={e=>{let v=e.target.value;if(v.length===1)v=v.toUpperCase();setter(a=>a.map((x,j)=>j===idx?{...x,desc:v}:x));}}
+                    style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isLocked?"#F5F0E8":C.cream,boxSizing:"border-box"}}/>
+                  <input value={l.qty} disabled={isLocked} inputMode="decimal"
+                    onChange={e=>{const v=e.target.value;if(/^\d*\.?\d{0,2}$/.test(v)||v==="")setter(a=>a.map((x,j)=>j===idx?{...x,qty:v}:x));}}
+                    style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 5px",fontSize:12,textAlign:"center",fontFamily:T.sans,background:isLocked?"#F5F0E8":C.cream,boxSizing:"border-box"}}/>
+                  <select value={l.unit} disabled={isLocked}
+                    onChange={e=>setter(a=>a.map((x,j)=>j===idx?{...x,unit:e.target.value}:x))}
+                    style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 3px",fontSize:11,fontFamily:T.sans,background:isLocked?"#F5F0E8":C.cream,boxSizing:"border-box"}}>
+                    {UNIT_OPTIONS.map(u=><option key={u} value={u}>{u}</option>)}
+                  </select>
+                  <input value={l.rate} disabled={isLocked} inputMode="decimal" placeholder="0.00"
+                    onChange={e=>{const v=e.target.value;if(/^\d*\.?\d{0,2}$/.test(v)||v==="")setter(a=>a.map((x,j)=>j===idx?{...x,rate:v}:x));}}
+                    style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 7px",fontSize:12,textAlign:"right",fontFamily:T.serif,background:isLocked?"#F5F0E8":C.cream,boxSizing:"border-box"}}/>
+                  <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:voLineAmt(l)>0?col:C.border}}>
+                    {voLineAmt(l)>0?(kind==="omit"?`(${fmt(voLineAmt(l))})`:fmt(voLineAmt(l))):"—"}
+                  </div>
+                  <button disabled={isLocked} onClick={()=>setter(a=>a.filter((_,j)=>j!==idx))}
+                    style={{background:"transparent",border:"none",color:C.danger,cursor:isLocked?"not-allowed":"pointer",fontSize:13,opacity:isLocked?0.3:1}}>✕</button>
+                </div>
+              ))}
+              {!isLocked&&(
+                <div style={{padding:"8px 16px",borderTop:`1px solid ${C.creamD}`}}>
+                  <button onClick={()=>setter(a=>[...a,voBlank()])}
+                    style={{background:kind==="add"?C.success:C.danger,border:"none",borderRadius:16,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:T.sans,padding:"5px 16px",letterSpacing:0.3}}>
+                    + Add {kind==="add"?"addition":"omission"} line
+                  </button>
+                </div>
+              )}
+            </div>
+          ));
+        })()}
+
+        {/* NET */}
+        <div className="no-print" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"14px 20px",marginBottom:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 140px",rowGap:7}}>
+            <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>Additions</div>
+            <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.success}}>{fmt(voAddSub)}</div>
+            <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>Omissions</div>
+            <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.danger}}>{voOmitSub>0?`(${fmt(voOmitSub)})`:fmt(0)}</div>
+            <div style={{fontSize:12,color:C.ink,fontFamily:T.sans,fontWeight:600,borderTop:`1px solid ${C.border}`,paddingTop:7}}>Net variation {voNet<0?"(credit to client)":""}</div>
+            <div style={{fontFamily:T.serif,fontSize:17,textAlign:"right",color:voNet<0?C.danger:C.ink,borderTop:`1px solid ${C.border}`,paddingTop:7}}>{voNet<0?`(${fmt(Math.abs(voNet))})`:fmt(voNet)}</div>
+            {gst&&(<>
+              <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>GST (9%)</div>
+              <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(gstAmt)}</div>
+            </>)}
+          </div>
+          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.gold}44`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+            <div style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>
+              Payment: <strong style={{color:C.ink}}>100% upon completion of variation works</strong>
+              {parentTotal!=null&&<span> · Revised contract sum: <strong style={{color:C.ink,fontFamily:T.serif}}>{fmt(parentTotal+total)}</strong></span>}
+            </div>
+            <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold}}>{fmt(total)}</div>
+          </div>
+        </div>
+
+        {/* DIRECTOR APPROVAL */}
+        <div className="no-print" style={{background:voApproved?"#F0F6F1":"#FFF8F2",borderRadius:4,border:`1px solid ${voApproved?C.success:C.terra}`,padding:"14px 20px",marginBottom:10}}>
+          {voApproved?(
+            <div style={{display:"flex",alignItems:"center",gap:9}}>
+              <span style={{color:C.success,fontSize:16}}>✓</span>
+              <span style={{fontSize:12,color:C.success,fontFamily:T.sans}}>Approved by Director. This VO may now be sent to the client.</span>
+              {!isFullyLocked&&<button onClick={()=>setVoApproved(false)} style={{marginLeft:"auto",background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:10,fontFamily:T.sans,textDecoration:"underline"}}>Revoke</button>}
+            </div>
+          ):(
+            <div>
+              <div style={{fontSize:12,color:C.terra,fontFamily:T.sans,fontWeight:700,marginBottom:3}}>Director approval required</div>
+              <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginBottom:10}}>Every Variation Order must be approved by a Director before it can be marked Sent or reach the client.</div>
+              {showVoPin?(
+                <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+                  <input type="password" autoFocus value={voPinBuf} onChange={e=>setVoPinBuf(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter"){if(voPinBuf===DIRECTOR_PIN){setVoApproved(true);setVoPinBuf("");setShowVoPin(false);}else alert("Incorrect Director PIN");}}}
+                    placeholder="Director PIN"
+                    style={{width:120,border:`1px solid ${C.border}`,borderRadius:3,padding:"7px 9px",fontSize:12,fontFamily:T.sans}}/>
+                  <button onClick={()=>{if(voPinBuf===DIRECTOR_PIN){setVoApproved(true);setVoPinBuf("");setShowVoPin(false);}else alert("Incorrect Director PIN");}}
+                    style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"7px 14px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>Approve VO</button>
+                  <button onClick={()=>{setShowVoPin(false);setVoPinBuf("");}} style={{background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans}}>Cancel</button>
+                </div>
+              ):(
+                <button onClick={()=>setShowVoPin(true)}
+                  style={{background:C.terra,color:"#fff",border:"none",borderRadius:4,padding:"8px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>Enter Director PIN →</button>
+              )}
+            </div>
+          )}
+        </div>
+      </>)}
+
+      {step==="quote"&&!isVO&&(<>
         {/* TRADE JUMP NAV — horizontal sticky bar, wraps on narrow/mobile, never overlaps */}
         <div className="no-print trade-nav" style={{position:"sticky",top:topbarH,zIndex:55,display:"flex",flexWrap:"nowrap",overflowX:"auto",gap:4,background:C.white,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 9px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",WebkitOverflowScrolling:"touch"}}>
           <span style={{fontSize:9,letterSpacing:1,color:C.stone,fontWeight:700,fontFamily:T.sans,alignSelf:"center",marginRight:8,flex:"0 0 auto",whiteSpace:"nowrap"}}>TRADE</span>
@@ -1902,7 +2079,7 @@ function QuoteBuilder({initData,onSave,onBack}){
       {/* PREVIEW */}
       {step==="preview"&&(<>
         <div className="no-print" style={{display:"flex",gap:0,marginBottom:14,borderRadius:3,overflow:"hidden",border:`1px solid ${C.border}`,width:"fit-content",flexWrap:"wrap"}}>
-          {[["quote","All Items"],["summary","Summary"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"],["sor","SOR"]].map(([k,lbl])=>(
+          {(isVO?[["summary","Variation Order"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"]]:[["quote","All Items"],["summary","Summary"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"],["sor","SOR"]]).map(([k,lbl])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:tab===k?C.ink:C.white,color:tab===k?C.gold:C.stone,border:"none",padding:"9px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,borderRight:`1px solid ${C.border}`}}>{lbl}</button>
           ))}
         </div>
@@ -2387,7 +2564,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
                 <div style={{fontFamily:T.serif,fontSize:13,fontWeight:300,color:C.gold,letterSpacing:4,marginBottom:2}}>IKIGAI INTERIOR</div>
-                <div style={{fontSize:8,letterSpacing:2,color:C.stone,marginBottom:8}}>QUOTATION</div>
+                <div style={{fontSize:8,letterSpacing:2,color:C.stone,marginBottom:8}}>{isVO?`VARIATION ORDER — VO-${voNumber}`:"QUOTATION"}</div>
                 <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300}}>{client.name||"—"}</div>
                 {projectName&&<div style={{fontSize:12,color:C.terra,marginTop:1,fontStyle:"italic"}}>{projectName}</div>}
                 <div style={{fontSize:12,color:C.stone,marginTop:3}}>{client.address}</div>
@@ -2408,11 +2585,36 @@ function QuoteBuilder({initData,onSave,onBack}){
           </div>
 
           <div className="print-summary" style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:10,overflow:"hidden"}}>
-            <div style={{padding:"12px 20px 6px",fontFamily:T.serif,fontSize:16,fontWeight:300}}>Summary of Cost</div>
+            <div style={{padding:"12px 20px 6px",fontFamily:T.serif,fontSize:16,fontWeight:300}}>{isVO?"Schedule of Variation":"Summary of Cost"}</div>
+            {isVO&&parentRef&&<div style={{padding:"0 20px 8px",fontSize:11,color:C.stone,fontFamily:T.sans}}>Varies parent contract <strong style={{color:C.ink}}>{parentRef}</strong>{parentTotal!=null&&<span> · original sum <strong style={{color:C.ink}}>{fmt(parentTotal)}</strong></span>}. The parent contract remains unaltered.</div>}
             <div style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",background:C.creamD,padding:"6px 20px"}}>
               {["#","TRADE","AMOUNT (SGD)"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i===2?"right":"left"}}>{h}</div>)}
             </div>
-            {designSubtotal>0&&(
+            {isVO&&(<>
+              <div style={{padding:"7px 20px",background:"#F0F6F1",borderBottom:`1px solid ${C.border}`}}>
+                <span style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:C.success,fontFamily:T.sans}}>ADDITIONS (+)</span>
+              </div>
+              {voAdds.filter(l=>voLineAmt(l)>0).map((l,i)=>(
+                <div key={l.id} style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"8px 20px",borderBottom:"1px solid #F5F0E8"}}>
+                  <div style={{fontSize:10,color:C.stone}}>{i+1}</div>
+                  <div><div style={{fontSize:13}}>{l.desc||"—"}</div><div style={{fontSize:10,color:C.stone,marginTop:1}}>{l.qty} {l.unit} @ {fmt(parseFloat(l.rate)||0)}</div></div>
+                  <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(voLineAmt(l))}</div>
+                </div>
+              ))}
+              {voAdds.filter(l=>voLineAmt(l)>0).length===0&&<div style={{padding:"8px 20px",fontSize:11,color:C.stone,borderBottom:"1px solid #F5F0E8"}}>None</div>}
+              <div style={{padding:"7px 20px",background:"#FBF0F0",borderBottom:`1px solid ${C.border}`,borderTop:`1px solid ${C.border}`}}>
+                <span style={{fontSize:9,fontWeight:700,letterSpacing:1.5,color:C.danger,fontFamily:T.sans}}>OMISSIONS (&minus;)</span>
+              </div>
+              {voOmits.filter(l=>voLineAmt(l)>0).map((l,i)=>(
+                <div key={l.id} style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"8px 20px",borderBottom:"1px solid #F5F0E8"}}>
+                  <div style={{fontSize:10,color:C.stone}}>{i+1}</div>
+                  <div><div style={{fontSize:13}}>{l.desc||"—"}</div><div style={{fontSize:10,color:C.stone,marginTop:1}}>{l.qty} {l.unit} @ {fmt(parseFloat(l.rate)||0)}</div></div>
+                  <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.danger}}>({fmt(voLineAmt(l))})</div>
+                </div>
+              ))}
+              {voOmits.filter(l=>voLineAmt(l)>0).length===0&&<div style={{padding:"8px 20px",fontSize:11,color:C.stone,borderBottom:"1px solid #F5F0E8"}}>None</div>}
+            </>)}
+            {!isVO&&designSubtotal>0&&(
               <div style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"9px 20px",borderBottom:`1px solid #F5F0E8`}}>
                 <div style={{fontSize:10,color:C.stone}}>01</div>
                 <div>
@@ -2422,7 +2624,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(designSubtotal)}</div>
               </div>
             )}
-            {tradeSubs.filter(t=>t.sub>0).map(t=>(
+            {!isVO&&tradeSubs.filter(t=>t.sub>0).map(t=>(
               <div key={t.id} style={{display:"grid",gridTemplateColumns:"44px 1fr 130px",padding:"9px 20px",borderBottom:`1px solid #F5F0E8`}}>
                 <div style={{fontSize:10,color:C.stone}}>{t.code}</div>
                 <div style={{fontSize:13}}>{t.name}</div>
@@ -2455,9 +2657,15 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div/><div style={{fontSize:12,color:C.stone}}>GST (9%)</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(gstAmt)}</div>
             </div>}
             <div style={{padding:"13px 20px",background:C.ink,display:"grid",gridTemplateColumns:"44px 1fr 130px",alignItems:"baseline"}}>
-              <div/><div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>TOTAL SUM (SGD)</div>
-              <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold,textAlign:"right"}}>{fmt(total)}</div>
+              <div/><div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>{isVO?"NET VARIATION (SGD)":"TOTAL SUM (SGD)"}</div>
+              <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold,textAlign:"right"}}>{total<0?`(${fmt(Math.abs(total))})`:fmt(total)}</div>
             </div>
+            {isVO&&parentTotal!=null&&(
+              <div style={{padding:"10px 20px",background:C.creamD,display:"grid",gridTemplateColumns:"44px 1fr 130px",alignItems:"baseline",borderTop:`1px solid ${C.border}`}}>
+                <div/><div style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>REVISED CONTRACT SUM</div>
+                <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.ink,textAlign:"right"}}>{fmt(parentTotal+total)}</div>
+              </div>
+            )}
           </div>
 
           {/* PAYMENT SCHEDULE */}
