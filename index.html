@@ -35,8 +35,11 @@ body.printing .print-section{
   break-before:page;page-break-before:always;
   break-after:auto;page-break-after:auto;
   break-inside:auto;
+  padding:0!important;
 }
 body.printing .print-section:first-of-type{break-before:auto;page-break-before:auto;}
+/* A section header must never be stranded at the foot of a page with nothing under it. */
+body.printing .print-section > div:first-child{break-after:avoid;page-break-after:avoid;}
 body.printing .print-section:empty{display:none!important;break-before:auto;page-break-before:auto;}
 
 /* Summary-only scope */
@@ -842,6 +845,25 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
   const trashed=versions.filter(q=>q.deletedAt);
   const live=versions.filter(q=>!q.deletedAt);
 
+  // DUPLICATE — works on ANY status (Draft, Sent, Signed). Always produces a brand-new
+  // standalone Draft: fresh reference, no parent link, no signatures, no invoice number,
+  // no director approval, no VO lineage. Use for the same project or a different one.
+  const dup=q=>{
+    const copy={...JSON.parse(JSON.stringify(q)),id:newId(),name:`${q.name} (Copy)`,status:"Draft",
+      isVO:false,parentId:null,voNumber:0,voCount:0,parentRef:null,parentTotal:null,
+      parentTotal_snapshot:null,voApproved:false,invNo:null,revised:false,deletedAt:undefined,
+      createdAt:todayStr(),updatedAt:todayStr()};
+    delete copy.deletedAt;
+    copy.client={...copy.client,ref:genRef(),date:todayStr()};
+    copy.sig={...(copy.sig||{}),clientName:"",agreed:false,
+      summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",
+      idCanvas:"",directorCanvas:"",clientCanvas:"",client2Canvas:"",client2Name:"",
+      date:todayStr(),idDate:todayStr(),directorDate:todayStr()};
+    Object.keys(copy.sig).forEach(k=>{if(k.startsWith("paid_"))delete copy.sig[k];});
+    const v=[copy,...versions];setVersions(v);saveVersions(v);cloudPush(copy);
+    alert(`Duplicated as a new Draft.\n\nA new reference number will be issued when you save it.`);
+  };
+
   const trash=q=>{
     if(q.status==="Signed"){
       alert("This quote is SIGNED and cannot be deleted.\n\nA signed quote is an executed contract. To change it, raise a Variation Order.");
@@ -1186,11 +1208,14 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[idStaff,setIdStaff]=useState(initData.idStaff||(SESSION?SESSION.name:""));
   const[status,setStatus]=useState(initData.status||"Draft");
   const invNo=initData.invNo||null;
-  const[unitSqft,setUnitSqft]=useState(initData.unitSqft||0);
+  const[unitSqft,setUnitSqftRaw]=useState(initData.unitSqft||0);
+  const setUnitSqft=(...a)=>{markRevised();setUnitSqftRaw(...a);};
   const[projectType,setProjectType]=useState(initData.projectType||"condo");
   const PTC=PT(projectType);
-  const[designOn,setDesignOn]=useState(initData.designOn||{});
-  const[qtys,setQtys]=useState(initData.qtys||{});
+  const[designOn,setDesignOnRaw]=useState(initData.designOn||{});
+  const setDesignOn=(...a)=>{markRevised();setDesignOnRaw(...a);};
+  const[qtys,setQtysRaw]=useState(initData.qtys||{});
+  const setQtys=(...a)=>{markRevised();setQtysRaw(...a);};
   const[itemOn,setItemOn]=useState(initData.itemOn||{});
   const[tiers,setTiers]=useState(initData.tiers||{});
   const[notes,setNotes]=useState(initData.notes||{});
@@ -1226,7 +1251,8 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[showEmail,setShowEmail]=useState(false);
   const[showFullPrintPin,setShowFullPrintPin]=useState(false);
   const[printPin,setPrintPin]=useState("");
-  const[poaPrices,setPoaPrices]=useState(initData.poaPrices||{});
+  const[poaPrices,setPoaPricesRaw]=useState(initData.poaPrices||{});
+  const setPoaPrices=(...a)=>{markRevised();setPoaPricesRaw(...a);};
   const[poaUnlocked,setPoaUnlocked]=useState(true);// POA fields are always editable now; approval is the gate
   const[poaApproved,setPoaApproved]=useState(initData.poaApproved||{});// {itemId:true} once senior/director approves
   const[poaPinPrompt,setPoaPinPrompt]=useState(null);
@@ -1307,8 +1333,17 @@ function QuoteBuilder({initData,onSave,onBack}){
   const imgRefs=useRef({});
   const saveTimerRef=useRef(null);
 
-  const isLocked=status==="Sent"||status==="Signed";
+  // Sent is a negotiating document — still editable. Signed is an executed contract — frozen.
+  const isLocked=status==="Signed";
   const isFullyLocked=status==="Signed";
+  // If a Sent quote is edited, it must not silently diverge from the copy the client holds.
+  // Any change reverts it to Draft and flags it for re-issue, so the status can never lie.
+  const[revised,setRevised]=useState(initData.revised||false);
+  const sentRef=useRef(status);
+  useEffect(()=>{sentRef.current=status;},[status]);
+  const markRevised=useCallback(()=>{
+    if(sentRef.current==="Sent"){setStatus("Draft");setRevised(true);}
+  },[]);
   const gst=ent.gst;
   const isOn=id=>itemOn[id]===true;
   const getZone=item=>zoneOverride[item.id]||item.zone||"Whole House";
@@ -1342,7 +1377,7 @@ function QuoteBuilder({initData,onSave,onBack}){
     invNo,
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
-    isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,
+    isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,revised,
     openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved
   });
   const[issuing,setIssuing]=useState(false);
@@ -1371,6 +1406,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Master trade toggle: ON switches every line in the trade on, OFF switches every line off.
   // Individual line toggles remain fully independent.
   const toggleTM=t=>{
+    markRevised();
     const turnOn=!tradeOn(t);
     const ids=tradeIDs(t);
     setItemOn(o=>{const n={...o};ids.forEach(id=>{n[id]=turnOn;});return n;});
@@ -1387,6 +1423,7 @@ function QuoteBuilder({initData,onSave,onBack}){
     setOpenZones(o=>({...o,[zK(t.id,z)]:!isOpen}));
   };
   const toggleItem=(id,tradeId,zone)=>{
+    markRevised();
     const nowOn=!isOn(id);setItemOn(o=>({...o,[id]:nowOn}));
     if(nowOn){setOpenTrades(o=>({...o,[tradeId]:true}));setOpenZones(o=>({...o,[zK(tradeId,zone)]:true}));}
   };
@@ -1559,7 +1596,10 @@ function QuoteBuilder({initData,onSave,onBack}){
               if(st===status)return;
               if(st==="Sent"){
                 if(isVO&&!voApproved){alert("This Variation Order must be approved by a Director before it can be sent.");return;}
-                if(!window.confirm("Mark as Sent? Items will be locked."))return;
+                if(!window.confirm(revised
+                  ? "Re-issue as Sent?\n\nThis quote was revised after it was last sent. Make sure the client receives the updated document."
+                  : "Mark as Sent?\n\nThe quote stays editable — any further change will return it to Draft for re-issue."))return;
+                setRevised(false);
               }
               if(st==="Signed"){
                 const signed=sig&&(sig.summaryCanvas||sig.tcCanvas||sig.warrantyCanvas||sig.signCanvas);
@@ -1611,6 +1651,13 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
           </div>
           <button onClick={()=>{setPoaPinPrompt(null);setPoaPinBuf("");}} style={{marginTop:12,background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans,textDecoration:"underline"}}>Cancel</button>
+        </div>
+      )}
+      {revised&&!isFullyLocked&&(
+        <div className="no-print" style={{background:"#FFF8F2",border:`1px solid ${C.terra}`,borderRadius:4,padding:"11px 18px",margin:"8px 16px 0",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{color:C.terra,fontSize:14}}>&#9670;</span>
+          <span style={{fontSize:12,color:C.terra,fontFamily:T.sans,fontWeight:600}}>Revised after sending.</span>
+          <span style={{fontSize:11,color:C.stone,fontFamily:T.sans}}>The client is holding an older version. Re-print and re-issue, then mark it Sent again.</span>
         </div>
       )}
       {/* EMAIL PANEL */}
