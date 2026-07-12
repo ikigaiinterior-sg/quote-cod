@@ -98,6 +98,26 @@ const issueInv=async(entity)=>{
 const ZONE_ORDER_DEFAULT=["Entrance/Foyer","Living/Dining","Kitchen/Yard","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Balcony Main","Balcony 2","Whole House"];
 // Trades where adding a custom zone is logical (exclude noZone trades handled separately)
 const ADDZONE_OK=[3,4,5,6,7,8,9,10,11];
+const PROJECT_TYPES={
+  condo:{key:"condo",label:"Condominium / Apartment",feeBasis:"psf",psfRate:5,lumpSum:0,
+    zones:["Entrance/Foyer","Living/Dining","Kitchen/Yard","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Balcony Main","Balcony 2","Whole House"],
+    prelims:[]},
+  landed:{key:"landed",label:"Landed House",feeBasis:"lump",psfRate:0,lumpSum:10000,
+    zones:["Car Porch","Garden","Entrance/Foyer","Living/Dining","Kitchen/Yard","Staircase","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Balcony Main","Balcony 2","Attic","Whole House"],
+    prelims:[]},
+  penthouse:{key:"penthouse",label:"Penthouse / Duplex",feeBasis:"lump",psfRate:0,lumpSum:10000,
+    zones:["Entrance/Foyer","Living/Dining","Kitchen/Yard","Staircase","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Toilet 6","Balcony Main","Balcony 2","Balcony 3","Balcony 4","Balcony 5","Attic/Roof Terrace","Whole House"],
+    caps:{bedrooms:5,toilets:6,balconies:5,staircase:1},
+    prelims:[]},
+  commercial:{key:"commercial",label:"Commercial",feeBasis:"lump",psfRate:0,lumpSum:10000,
+    zones:["Reception","Open Workspace","Meeting Room 1","Meeting Room 2","Director Room","Pantry","Toilet 1","Toilet 2","Store","Corridor","Whole Unit"],
+    prelims:[
+      {id:"P.1",desc:"Permit to Work (PTW) submission & processing",unit:"LS",price:800},
+      {id:"P.2",desc:"Hoarding & site protection to landlord requirement",unit:"ft run",price:35},
+      {id:"P.3",desc:"Professional Engineer (PE) endorsement",unit:"LS",price:2500},
+    ]},
+};
+const PT=k=>PROJECT_TYPES[k]||PROJECT_TYPES.condo;
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
 const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier",sub:"Non-GST",gst:false}];
 const PAY_PRESETS={standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
@@ -454,13 +474,14 @@ const saveTradeOverride=(id,fields)=>{
   }catch{}
 };
 
-const blankQuote=(base=null)=>({
+const blankQuote=(base=null,ptype="condo")=>({
   id:Date.now(),
   name:base?`${base.projectName||base.name} — VO-${(base.voCount||0)+1}`:"New Quote",
   projectName:base?.projectName||"",
   isVO:!!base,parentId:base?.id||null,voNumber:base?(base.voCount||0)+1:0,
   createdAt:todayStr(),updatedAt:todayStr(),
   entity:base?.entity||"ikigai",status:"Draft",
+  projectType:base?.projectType||ptype,prelimOn:{},prelimQtys:{},
   unitSqft:base?.unitSqft||0,designOn:{},
   client:base?{...base.client,ref:genRef(),date:todayStr()}:{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()},
   idStaff:base?.idStaff||"",
@@ -680,6 +701,49 @@ const ItemRow=React.memo(function ItemRow({
 });
 
 // ── VERSION MANAGER ───────────────────────────────────────────────────────────
+
+function NewQuoteMenu({onNew}){
+  const[open,setOpen]=useState(false);
+  const ICONS={condo:"\u25A6",landed:"\u2302",penthouse:"\u25E7",commercial:"\u25A4"};
+  const SUB={condo:"$5 PSF design pool",landed:"Lump-sum design fee",penthouse:"Duplex \u00B7 Landed pricing",commercial:"Prelims \u00B7 PTW \u00B7 PE"};
+  useEffect(()=>{if(!open)return;const h=()=>setOpen(false);window.addEventListener("click",h);return()=>window.removeEventListener("click",h);},[open]);
+  return(
+    <div style={{position:"relative"}} onClick={e=>e.stopPropagation()}>
+      <button onClick={()=>setOpen(o=>!o)}
+        style={{background:`linear-gradient(180deg, ${C.gold} 0%, #B08F52 100%)`,color:C.ink,border:"none",borderRadius:4,
+          padding:"11px 20px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans,letterSpacing:1,
+          display:"flex",alignItems:"center",gap:9,boxShadow:open?"inset 0 2px 5px rgba(0,0,0,.22)":"0 2px 8px rgba(42,31,20,.28)",
+          transition:"box-shadow .18s ease"}}>
+        <span style={{fontSize:14,lineHeight:1}}>+</span>
+        <span>NEW QUOTE</span>
+        <span style={{fontSize:8,opacity:.75,transform:open?"rotate(180deg)":"none",transition:"transform .18s ease"}}>&#9660;</span>
+      </button>
+      {open&&(
+        <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,zIndex:60,width:268,
+          background:C.white,border:`1px solid ${C.gold}55`,borderRadius:6,overflow:"hidden",
+          boxShadow:"0 14px 34px rgba(42,31,20,.30)"}}>
+          <div style={{padding:"9px 14px",background:C.ink,color:C.stone,fontSize:8.5,letterSpacing:2.4,fontFamily:T.sans,fontWeight:600}}>SELECT PROJECT TYPE</div>
+          {Object.values(PROJECT_TYPES).map((p,i)=>(
+            <div key={p.key} onClick={()=>{setOpen(false);onNew(p.key);}}
+              onMouseEnter={e=>{e.currentTarget.style.background=C.cream;}}
+              onMouseLeave={e=>{e.currentTarget.style.background=C.white;}}
+              style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",cursor:"pointer",
+                borderTop:i===0?"none":`1px solid ${C.border}`,background:C.white,transition:"background .12s ease"}}>
+              <div style={{width:30,height:30,borderRadius:4,background:C.cream,border:`1px solid ${C.gold}44`,
+                display:"flex",alignItems:"center",justifyContent:"center",color:C.gold,fontSize:14,flexShrink:0}}>{ICONS[p.key]}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:T.serif,fontSize:14,color:C.ink,lineHeight:1.25}}>{p.label}</div>
+                <div style={{fontSize:9.5,color:C.stone,fontFamily:T.sans,letterSpacing:.4,marginTop:1}}>{SUB[p.key]}</div>
+              </div>
+              <span style={{color:C.gold,fontSize:12,opacity:.55}}>&#8594;</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
   const[versions,setVersions]=useState(loadVersions);
   const del=id=>{if(!window.confirm("Delete this quote?"))return;const v=versions.filter(x=>x.id!==id);setVersions(v);saveVersions(v);cloudDelete(id);};
@@ -713,8 +777,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
           <span style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginRight:4}}>{SESSION?SESSION.name:""}</span>
           <button onClick={()=>sb.auth.signOut().then(()=>window.location.reload())} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 12px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Sign out</button>
           {USER_ROLE>=ROLES.director&&<button onClick={onAdmin} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⚙ Admin</button>}
-          <button onClick={()=>alert("Commercial quotes — coming soon in v7.")} style={{background:"transparent",border:`1px solid ${C.gold}66`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.gold,fontFamily:T.sans,fontWeight:600}}>🏢 Commercial</button>
-          <button onClick={onNew} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans,letterSpacing:1}}>+ New Quote</button>
+          <NewQuoteMenu onNew={onNew}/>
         </div>
       </div>
       <div style={{maxWidth:920,margin:"0 auto",padding:"28px 20px"}}>
@@ -726,7 +789,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
         {parents.length===0?(
           <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"48px",textAlign:"center"}}>
             <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.stone,marginBottom:8}}>No quotes yet</div>
-            <button onClick={onNew} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>+ New Quote</button>
+            <button onClick={()=>onNew("condo")} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>+ New Quote</button>
           </div>
         ):(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -923,6 +986,10 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[status,setStatus]=useState(initData.status||"Draft");
   const invNo=initData.invNo||null;
   const[unitSqft,setUnitSqft]=useState(initData.unitSqft||0);
+  const[projectType,setProjectType]=useState(initData.projectType||"condo");
+  const[prelimOn,setPrelimOn]=useState(initData.prelimOn||{});
+  const[prelimQtys,setPrelimQtys]=useState(initData.prelimQtys||{});
+  const PTC=PT(projectType);
   const[designOn,setDesignOn]=useState(initData.designOn||{});
   const[qtys,setQtys]=useState(initData.qtys||{});
   const[itemOn,setItemOn]=useState(initData.itemOn||{});
@@ -982,7 +1049,7 @@ function QuoteBuilder({initData,onSave,onBack}){
     setMovePicker(null);
   };
   // zoneList = default zones + any custom-added zones (for dropdowns & iteration)
-  const zoneList=useMemo(()=>[...ZONE_ORDER_DEFAULT,...extraZones.filter(z=>!ZONE_ORDER_DEFAULT.includes(z))],[extraZones]);
+  const zoneList=useMemo(()=>{const base=PTC.zones;return[...base,...extraZones.filter(z=>!base.includes(z))];},[extraZones,projectType]);
   const zoneLabel=(tid,z)=>zoneNames[`${tid}-${z}`]||z;
   const addZone=(tid)=>{const name=window.prompt("New zone name:");if(!name||!name.trim())return;const nm=name.trim();setExtraZones(list=>list.includes(nm)?list:[...list,nm]);setShownZones(s=>({...s,[`${tid}-${nm}`]:true}));setOpenZones(o=>({...o,[`${tid}-${nm}`]:true}));};
   const[dragId,setDragId]=useState(null);
@@ -1045,12 +1112,12 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,prelimOn,prelimQtys,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig]);
 
   const buildSaveData=()=>({
     invNo,
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
-    entity,status,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
+    entity,status,projectType,prelimOn,prelimQtys,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
     openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved
   });
   const[issuing,setIssuing]=useState(false);
@@ -1152,12 +1219,18 @@ function QuoteBuilder({initData,onSave,onBack}){
 
   const getDesignPrice=item=>{
     if(item.fixedPrice!==null)return item.fixedPrice;
-    // 1.1 = 15% of RAW sqft (e.g. 1000sqft → $150). 1.2/1.3/1.4 = % of the $5/sqft design pool.
+    if(PTC.feeBasis==="lump"){
+      // Lump-sum types (Landed / Penthouse / Commercial): the $ pool is fixed, not PSF-derived.
+      const pool=PTC.lumpSum;
+      if(item.basis==="raw")return Math.round(pool*0.10*(item.psfPct||0)/0.15);
+      return Math.round(pool*(item.psfPct||0));
+    }
     if(item.basis==="raw")return Math.round(unitSqft*(item.psfPct||0));
     return Math.round(unitSqft*DESIGN_PSF_RATE*(item.psfPct||0));
   };
-  const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0),[designOn,unitSqft]);
-  const subtotal=designSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0);
+  const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0),[designOn,unitSqft,projectType]);
+  const prelimSubtotal=useMemo(()=>PTC.prelims.reduce((s,p)=>prelimOn[p.id]?s+(parseFloat(prelimQtys[p.id])||0)*p.price:s,0),[prelimOn,prelimQtys,projectType]);
+  const subtotal=designSubtotal+prelimSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0);
   const discAmt=discOk?(parseFloat(disc)||0):0;
   const afterDisc=subtotal-discAmt;
   const gstAmt=gst?afterDisc*0.09:0;
@@ -1468,9 +1541,43 @@ function QuoteBuilder({initData,onSave,onBack}){
           <span style={{fontFamily:T.serif,fontSize:24,fontWeight:300,color:C.gold}}>{fmt(total)}</span>
         </div>}
 
+        {/* PRELIMINARIES (commercial) */}
+        {PTC.prelims.length>0&&(
+          <div style={card}>
+            <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:C.cream}}>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>00</span>
+                <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>Preliminaries</span>
+                <span style={{fontSize:10,color:C.stone}}>— submissions & site protection</span>
+              </div>
+              {prelimSubtotal>0&&<span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(prelimSubtotal)}</span>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"28px 1fr 70px 60px 90px 80px",gap:3,background:C.creamD,padding:"5px 10px"}}>
+              {["","SCOPE","UNIT","QTY","RATE","TOTAL"].map((h,i)=>(
+                <div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>3?"right":"left"}}>{h}</div>
+              ))}
+            </div>
+            {PTC.prelims.map(p=>{
+              const on=!!prelimOn[p.id];const q=parseFloat(prelimQtys[p.id])||0;
+              return(
+                <div key={p.id} style={{display:"grid",gridTemplateColumns:"28px 1fr 70px 60px 90px 80px",gap:3,padding:"7px 10px",borderBottom:`1px solid ${C.border}`,alignItems:"center",opacity:on?1:0.5}}>
+                  <Toggle on={on} small disabled={isLocked} onClick={()=>{if(isLocked)return;setPrelimOn(o=>({...o,[p.id]:!o[p.id]}));if(!prelimQtys[p.id])setPrelimQtys(x=>({...x,[p.id]:"1"}));}}/>
+                  <div style={{fontSize:12,fontFamily:T.sans}}>{p.desc}</div>
+                  <div style={{fontSize:11,color:C.stone}}>{p.unit}</div>
+                  <input type="text" inputMode="numeric" value={prelimQtys[p.id]||""} disabled={isLocked||!on}
+                    onChange={e=>setPrelimQtys(x=>({...x,[p.id]:e.target.value.replace(/[^0-9.]/g,"")}))}
+                    style={{width:52,border:`1px solid ${C.border}`,borderRadius:3,padding:"3px 5px",fontSize:12,textAlign:"center",fontFamily:T.sans}}/>
+                  <div style={{fontSize:12,textAlign:"right",fontFamily:T.serif}}>{fmt(p.price)}</div>
+                  <div style={{fontSize:12,textAlign:"right",fontFamily:T.serif,color:C.gold}}>{on?fmt(q*p.price):"—"}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {/* DESIGN TRADE 01 */}
         {(()=>{
-          const psfPool=unitSqft*DESIGN_PSF_RATE;
+          const psfPool=PTC.feeBasis==="psf"?unitSqft*DESIGN_PSF_RATE:PTC.lumpSum;
           const anyOn=DESIGN_ITEMS_CFG.some(i=>designOn[i.id]);
           const tOpen=openTrades[1]!==false;
           return(
@@ -1481,18 +1588,27 @@ function QuoteBuilder({initData,onSave,onBack}){
                   <Toggle on={anyOn} small disabled={isLocked} onClick={()=>{if(isLocked)return;const ns={};DESIGN_ITEMS_CFG.forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
                   <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>01</span>
                   <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>Interior Design & Consultation</span>
-                  <span style={{fontSize:10,color:C.stone}}>— PSF-based fees</span>
+                  <span style={{fontSize:10,color:C.stone}}>— {PTC.feeBasis==="psf"?"PSF-based fees":"Lump-sum fee"}</span>
                 </div>
                 {designSubtotal>0&&<span style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{fmt(designSubtotal)}</span>}
               </div>
               {tOpen&&(
                 <>
                   <div style={{padding:"8px 14px",background:"#FFFDF5",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <label style={{fontSize:11,fontWeight:600,color:C.stone,fontFamily:T.sans}}>Project Type</label>
+                    <select value={projectType} disabled={isLocked}
+                      onChange={e=>setProjectType(e.target.value)}
+                      style={{border:`1px solid ${C.gold}`,borderRadius:3,padding:"5px 8px",fontSize:12,fontFamily:T.sans,background:C.cream}}>
+                      {Object.values(PROJECT_TYPES).map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
+                    </select>
                     <label style={{fontSize:11,fontWeight:600,color:C.stone,fontFamily:T.sans}}>Unit Size (sqft)</label>
                     <input type="text" inputMode="numeric" value={unitSqft||""} placeholder="e.g. 1000"
                       onChange={e=>{const v=parseInt(e.target.value.replace(/[^0-9]/g,""),10)||0;setUnitSqft(Math.max(0,v));}}
                       style={{width:80,border:`1px solid ${C.gold}`,borderRadius:3,padding:"5px 8px",fontSize:13,fontFamily:T.sans,background:C.cream,textAlign:"center"}}/>
-                    <span style={{fontSize:11,color:C.stone}}>× $5 PSF = <strong style={{color:C.ink,fontFamily:T.serif}}>{fmt(psfPool)}</strong> design pool</span>
+                    {PTC.feeBasis==="psf"
+                      ?<span style={{fontSize:11,color:C.stone}}>× $5 PSF = <strong style={{color:C.ink,fontFamily:T.serif}}>{fmt(psfPool)}</strong> design pool</span>
+                      :<span style={{fontSize:11,color:C.stone}}>Lump-sum design fee = <strong style={{color:C.ink,fontFamily:T.serif}}>{fmt(psfPool)}</strong></span>}
+                    {PTC.caps&&<span style={{fontSize:10,color:C.terra||C.stone}}>Caps: {PTC.caps.bedrooms} bed · {PTC.caps.toilets} toilet · {PTC.caps.balconies} balcony · {PTC.caps.staircase} staircase</span>}
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 90px 80px",gap:3,background:C.creamD,padding:"5px 10px"}}>
                     {["","","SCOPE","UNIT RATE","TOTAL"].map((h,i)=>(
@@ -2160,7 +2276,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div>
                 <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,letterSpacing:3,marginBottom:2}}>IKIGAI INTERIOR</div>
                 <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.ink,marginBottom:2}}>{client.name||"—"}{projectName&&<span style={{fontSize:13,color:C.terra,marginLeft:10,fontStyle:"italic"}}>{projectName}</span>}</div>
-                <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Ref: {client.ref} · {client.date} · {ent.label}</div>
+                <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Ref: {client.ref} · {client.date} · {ent.label} · {PTC.label}</div>
               </div>
               <div style={{textAlign:"right",fontFamily:T.sans}}>
                 <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold}}>{fmt(total)}</div>
@@ -2170,7 +2286,25 @@ function QuoteBuilder({initData,onSave,onBack}){
           </div>
           {(()=>{
             let itemNo=0;
-            return TRADES.map(trade=>{
+            const prelimRows=PTC.prelims.filter(p=>prelimOn[p.id]&&(parseFloat(prelimQtys[p.id])||0)>0);
+            const prelimBlock=prelimRows.length>0?(
+              <div key="prelim-print" style={{marginBottom:10,background:C.white,border:`1px solid ${C.border}`,borderRadius:4,overflow:"hidden"}}>
+                <div style={{background:C.cream,padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontFamily:T.serif,fontSize:14}}>00 · Preliminaries</span>
+                  <span style={{fontFamily:T.serif,fontSize:13,color:C.gold}}>{fmt(prelimSubtotal)}</span>
+                </div>
+                {prelimRows.map(p=>(
+                  <div key={p.id} style={{display:"grid",gridTemplateColumns:"34px 1fr 60px 55px 90px",gap:4,padding:"6px 12px",borderTop:`1px solid ${C.border}`,fontSize:11,fontFamily:T.sans}}>
+                    <div style={{color:C.stone}}>{++itemNo}</div>
+                    <div>{p.desc}</div>
+                    <div style={{color:C.stone}}>{p.unit}</div>
+                    <div style={{textAlign:"right"}}>{prelimQtys[p.id]}</div>
+                    <div style={{textAlign:"right",fontFamily:T.serif}}>{fmt((parseFloat(prelimQtys[p.id])||0)*p.price)}</div>
+                  </div>
+                ))}
+              </div>
+            ):null;
+            return [prelimBlock,...TRADES.map(trade=>{
               const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
               if(trade.id===1&&designSubtotal===0)return null;
               if(trade.id!==1&&tSub===0)return null;
@@ -2180,7 +2314,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               if(trade.id===1){
                 rows=DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>({
                   id:i.id,desc:i.desc,qty:"1",unit:"LS",note:"",
-                  amount:i.fixedPrice!==null?i.fixedPrice:(i.basis==="raw"?Math.round(unitSqft*(i.psfPct||0)):Math.round(unitSqft*DESIGN_PSF_RATE*(i.psfPct||0)))}));
+                  amount:getDesignPrice(i)}));
               }else{
                 const base=trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0&&!poaNeedsApproval(i.id)).map(i=>({
                   id:i.id,desc:i.desc,qty:parseFloat(qtys[i.id])||0,unit:i.unit,note:notes[i.id]||"",
@@ -2221,7 +2355,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                   })}
                 </div>
               );
-            });
+            })];
           })()}
           <div style={{background:C.ink,borderRadius:4,padding:"14px 20px",display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
             <span style={{fontSize:10,fontWeight:600,letterSpacing:2,color:C.stone}}>TOTAL {gst?"(incl. GST 9%)":""}</span>
@@ -2423,7 +2557,7 @@ function App(){
   },[]);
   const signOut=async()=>{await sb.auth.signOut();window.location.reload();};
   const openQuote=q=>{setActiveQuote(q);setScreen("builder");};
-  const newQuote=()=>{const q=blankQuote();openQuote(q);};
+  const newQuote=(ptype="condo")=>{const q=blankQuote(null,ptype);openQuote(q);};
   const newVO=parent=>{const q=blankQuote(parent);openQuote(q);};
   const saveQuote=async data=>{
     if(isDraftRef(data.client?.ref))return;   // never persist an unnumbered draft
