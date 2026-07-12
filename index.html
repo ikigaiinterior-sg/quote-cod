@@ -72,7 +72,7 @@ const STAFF={
   "admin":             {name:"Ikigai Admin",   mail:"admin@ikigaiinterior.com",     role:3}
 };
 const staffByEmail=e=>STAFF[String(e||"").split("@")[0].toLowerCase()]||null;
-const staffMail=()=>SESSION?SESSION.mail:"work@ikigaiinterior.com";
+const staffMail=n=>{const s=Object.values(STAFF).find(x=>x.name===n);return s?s.mail:"work@ikigaiinterior.com";};
 // Permanent CC — never removable
 const CC_FIXED="admin@ikigaiinterior.com,work@ikigaiinterior.com";
 // Draft placeholder — NO number burned until first save
@@ -710,8 +710,6 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
           <div style={{fontSize:9,color:C.stone,letterSpacing:3,marginTop:2}}>CODSTUDIO — QUOTATION BUILDER v6.5</div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <span style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginRight:4}}>{SESSION?SESSION.name:""}</span>
-          <button onClick={()=>sb.auth.signOut().then(()=>window.location.reload())} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 12px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Sign out</button>
           {USER_ROLE>=ROLES.director&&<button onClick={onAdmin} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⚙ Admin</button>}
           <button onClick={()=>alert("Commercial quotes — coming soon in v7.")} style={{background:"transparent",border:`1px solid ${C.gold}66`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.gold,fontFamily:T.sans,fontWeight:600}}>🏢 Commercial</button>
           <button onClick={onNew} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"10px 22px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:T.sans,letterSpacing:1}}>+ New Quote</button>
@@ -919,8 +917,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[entity,setEntity]=useState(initData.entity||"ikigai");
   const ent=ENTITIES.find(e=>e.id===entity);
   const[client,setClient]=useState(initData.client||{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()});
-  const[idStaff,setIdStaff]=useState(initData.idStaff||(SESSION?SESSION.name:""));
-  useEffect(()=>{if(SESSION&&!initData.idStaff)setIdStaff(SESSION.name);},[]);
+  const[idStaff,setIdStaff]=useState(initData.idStaff||"");
   const[status,setStatus]=useState(initData.status||"Draft");
   const invNo=initData.invNo||null;
   const[unitSqft,setUnitSqft]=useState(initData.unitSqft||0);
@@ -1339,10 +1336,10 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
           </div>
           <div style={{fontSize:11,color:C.stone,marginBottom:8,fontFamily:T.sans}}>
-            When sent, this quote will be shared as a read-only link. Auto CC: <strong>{staffMail()}</strong> · <strong>admin@ikigaiinterior.com</strong> · <strong>work@ikigaiinterior.com</strong> — sender is locked to your login.
+            When sent, this quote will be shared as a read-only link. Auto CC: <strong>{staffMail(idStaff)}</strong> · <strong>admin@ikigaiinterior.com</strong> · <strong>work@ikigaiinterior.com</strong> — sender is locked to your login.
           </div>
           <div style={{display:"flex",gap:8}}>
-            <a href={`mailto:${client.email||""}?cc=${client.email2?client.email2+",":""}${staffMail()},${CC_FIXED}&subject=Quotation ${client.ref} — Ikigai Interior&body=Dear ${client.name||""},\n\nPlease find your quotation (Ref: ${client.ref}) attached for review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd`}
+            <a href={`mailto:${client.email||""}?cc=${client.email2?client.email2+",":""}${staffMail(idStaff)},${CC_FIXED}&subject=Quotation ${client.ref} — Ikigai Interior&body=Dear ${client.name||""},\n\nPlease find your quotation (Ref: ${client.ref}) attached for review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd`}
               style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"8px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,textDecoration:"none",display:"inline-block"}}>
               ✉ Open in Mail App
             </a>
@@ -1411,8 +1408,9 @@ function QuoteBuilder({initData,onSave,onBack}){
             <div>
               <label style={sL}>ID In-Charge</label>
               <select style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 11px",fontSize:13,fontFamily:T.sans,background:C.cream,color:C.ink,boxSizing:"border-box"}}
-                value={idStaff} disabled>
-                <option value={idStaff}>{idStaff}</option>
+                value={idStaff} onChange={e=>setIdStaff(e.target.value)} disabled={isLocked}>
+                <option value="">— Select Designer —</option>
+                {Object.values(STAFF).filter((v,i,a)=>a.findIndex(x=>x.mail===v.mail)===i).map(v=><option key={v.mail} value={v.name}>{v.name}</option>)}
               </select>
             </div>
           </div>
@@ -1792,7 +1790,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div style={{padding:"16px",background:C.cream,borderRadius:4,border:`1px solid ${C.border}`}}>
                 <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>INTERIOR DESIGNER IN-CHARGE</div>
                 <div style={{fontSize:10,color:C.stone,marginBottom:3,fontFamily:T.sans}}>Name</div>
-                <input value={idStaff} readOnly disabled
+                <input value={idStaff} onChange={e=>setIdStaff(e.target.value)} disabled={isFullyLocked}
                   style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:7,boxSizing:"border-box"}}/>
                 <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
                 <input value={sig.idDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,idDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
@@ -2005,7 +2003,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
             {/* Receipt trigger */}
             {activePayItems.some((_,i)=>sig[`paid_${i}`])&&(
-              <a href={`mailto:${client.email||""}?cc=${staffMail()},${CC_FIXED}&subject=Payment Receipt — ${client.ref} — Ikigai Interior&body=Dear ${client.name||"Client"},\n\nThank you for your payment.\n\nRef: ${client.ref} · Project: ${projectName||"—"}\n\n${activePayItems.map((p,i)=>sig[`paid_${i}`]?`✓ Stage ${i+1} (${p.pct}%) — ${fmt(grandTotal*(parseFloat(p.pct)||0)/100)}`:"").filter(Boolean).join("\n")}\n\nKindly retain this as your official receipt.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd\n${staffMail()}`}
+              <a href={`mailto:${client.email||""}?cc=${staffMail(idStaff)},${CC_FIXED}&subject=Payment Receipt — ${client.ref} — Ikigai Interior&body=Dear ${client.name||"Client"},\n\nThank you for your payment.\n\nRef: ${client.ref} · Project: ${projectName||"—"}\n\n${activePayItems.map((p,i)=>sig[`paid_${i}`]?`✓ Stage ${i+1} (${p.pct}%) — ${fmt(grandTotal*(parseFloat(p.pct)||0)/100)}`:"").filter(Boolean).join("\n")}\n\nKindly retain this as your official receipt.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd\n${staffMail(idStaff)}`}
                 style={{display:"inline-block",background:C.gold,color:C.ink,borderRadius:3,padding:"10px 20px",fontSize:12,fontWeight:600,textDecoration:"none",fontFamily:T.sans}}>
                 ✉ Send Receipt to Client
               </a>
@@ -2411,16 +2409,10 @@ function App(){
   const[authed,setAuthed]=useState(false);
   const[denied,setDenied]=useState("");
   useEffect(()=>{
-    sb.auth.getSession().then(({data})=>{
-      const u=data?.session?.user;
-      if(!u){setBooted(true);return;}
-      const email=u.email||u.user_metadata?.email||"";
-      const s=staffByEmail(email);
-      if(!s){setDenied(email||"unknown account");setBooted(true);return;}
-      SESSION={...s,email};USER_ROLE=s.role;
-      setAuthed(true);
-      cloudPull().then(()=>setBooted(true));
-    });
+    // LOGIN DISABLED until Azure is configured. Open access, director role.
+    USER_ROLE=ROLES.director;
+    setAuthed(true);
+    cloudPull().then(()=>setBooted(true));
   },[]);
   const signOut=async()=>{await sb.auth.signOut();window.location.reload();};
   const openQuote=q=>{setActiveQuote(q);setScreen("builder");};
