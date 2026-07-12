@@ -40,6 +40,16 @@ body.printing .print-section{
 body.printing .print-section:first-of-type{break-before:auto;page-break-before:auto;}
 /* A section header must never be stranded at the foot of a page with nothing under it. */
 body.printing .print-section > div:first-child{break-after:avoid;page-break-after:avoid;}
+
+/* SUMMARY: on a short quote the acknowledgement was tipping onto a near-empty second page.
+   Keep the whole summary document — header, cost table, totals, payment, acknowledgement —
+   as one unbreakable unit, and tighten the paper padding so it fits on a single sheet.
+   A long summary will still flow across pages naturally.                                   */
+body.printing .summary-doc{break-inside:avoid;page-break-inside:avoid;}
+body.printing .summary-doc .print-summary{break-inside:avoid;page-break-inside:avoid;}
+body.printing .summary-doc > div{margin-bottom:6px!important;}
+body.printing .print-summary{padding:12px 18px!important;margin-bottom:0!important;}
+body.printing .summary-doc canvas{max-height:52px!important;}
 body.printing .print-section:empty{display:none!important;break-before:auto;page-break-before:auto;}
 
 /* Summary-only scope */
@@ -849,7 +859,13 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
   // standalone Draft: fresh reference, no parent link, no signatures, no invoice number,
   // no director approval, no VO lineage. Use for the same project or a different one.
   const dup=q=>{
-    const copy={...JSON.parse(JSON.stringify(q)),id:newId(),name:`${q.name} (Copy)`,status:"Draft",
+    const base=(q.name||"Quote").replace(/\s*\(Copy(?:\s\d+)?\)\s*$/,"");
+    const taken=versions.filter(x=>(x.name||"").startsWith(base)).map(x=>{
+      const m=(x.name||"").match(/\(Copy(?:\s(\d+))?\)\s*$/);
+      return m?(m[1]?Number(m[1]):1):0;
+    });
+    const n=Math.max(0,...taken)+1;
+    const copy={...JSON.parse(JSON.stringify(q)),id:newId(),name:`${base} (Copy${n>1?" "+n:""})`,status:"Draft",
       isVO:false,parentId:null,voNumber:0,voCount:0,parentRef:null,parentTotal:null,
       parentTotal_snapshot:null,voApproved:false,invNo:null,revised:false,deletedAt:undefined,
       createdAt:todayStr(),updatedAt:todayStr()};
