@@ -83,6 +83,9 @@ const staffMail=n=>{const s=Object.values(STAFF).find(x=>x.name===n);return s?s.
 const CC_FIXED="admin@ikigaiinterior.com,work@ikigaiinterior.com";
 // Draft placeholder — NO number burned until first save
 const genRef=()=>"DRAFT-"+Math.random().toString(36).slice(2,8).toUpperCase();
+// Collision-proof id. Date.now() alone repeats within the same millisecond — two quick
+// clicks produced two records with the SAME id, which Supabase upsert then merged/overwrote.
+const newId=()=>Number(String(Date.now()).slice(-10)+String(Math.floor(Math.random()*900+100)));
 const isDraftRef=r=>!r||String(r).startsWith("DRAFT-");
 // Server-issued, collision-proof
 const issueRef=async(entity)=>{
@@ -439,6 +442,8 @@ const DESIGN_ITEMS_CFG=[
 let CLOUD=[];let CLOUD_READY=false;
 const loadVersions=()=>CLOUD;
 const saveVersions=v=>{CLOUD=v;localStorage.setItem(STORAGE_KEY,JSON.stringify(v));};
+const TRASH_DAYS=30;
+const daysLeft=q=>{if(!q||!q.deletedAt)return null;const d=Math.ceil((TRASH_DAYS*864e5-(Date.now()-q.deletedAt))/864e5);return d;};
 const cloudPull=async()=>{
   const{data,error}=await sb.from("quotes").select("id,payload").order("id",{ascending:false});
   if(error){console.error("cloud pull",error);
@@ -452,6 +457,16 @@ const cloudPull=async()=>{
   if(orphans.length){
     await sb.from("quotes").upsert(orphans.map(q=>({id:q.id,ref:q.client?.ref||null,payload:q})));
     CLOUD=[...orphans,...CLOUD];
+  }
+  // Auto-purge: anything sitting in Trash beyond the retention window is destroyed on load.
+  // (A web app cannot self-trigger, so the purge happens the next time anyone opens it —
+  //  30 days is therefore a floor, not an exact expiry. That is acceptable.)
+  const expired=CLOUD.filter(q=>q.deletedAt&&(Date.now()-q.deletedAt)>TRASH_DAYS*864e5);
+  if(expired.length){
+    await sb.from("quotes").delete().in("id",expired.map(q=>q.id));
+    const gone=new Set(expired.map(q=>q.id));
+    CLOUD=CLOUD.filter(q=>!gone.has(q.id));
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(CLOUD));
   }
   CLOUD_READY=true;return CLOUD;
 };
@@ -502,15 +517,15 @@ const calcQuoteTotal=q=>{
 };
 
 const blankQuote=(base=null,ptype="condo")=>({
-  id:Date.now(),
-  name:base?`${base.projectName||base.name} — VO-${(base.voCount||0)+1}`:"New Quote",
+  id:newId(),
+  name:base?`${base.projectName||base.name} — VO-${base.voCount||1}`:"New Quote",
   projectName:base?.projectName||"",
-  isVO:!!base,parentId:base?.id||null,voNumber:base?(base.voCount||0)+1:0,
+  isVO:!!base,parentId:base?.id||null,voNumber:base?(base.voCount||1):0,
   createdAt:todayStr(),updatedAt:todayStr(),
   entity:base?.entity||"ikigai",status:"Draft",
   projectType:base?.projectType||ptype,
   unitSqft:base?.unitSqft||0,designOn:{},
-  client:base?{...base.client,ref:`${base.client?.ref||"REF"}-VO${(base.voCount||0)+1}`,date:todayStr()}:{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()},
+  client:base?{...base.client,ref:`${base.client?.ref||"REF"}-VO${base.voCount||1}`,date:todayStr()}:{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()},
   idStaff:base?.idStaff||"",
   parentRef:base?.client?.ref||null,
   parentTotal:base?.parentTotal_snapshot??null,
@@ -781,26 +796,72 @@ function NewQuoteMenu({onNew}){
 
 function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
   const[versions,setVersions]=useState(loadVersions);
-  const del=id=>{if(!window.confirm("Delete this quote?"))return;const v=versions.filter(x=>x.id!==id);setVersions(v);saveVersions(v);cloudDelete(id);};
-  const dup=q=>{
-    const copy={...JSON.parse(JSON.stringify(q)),id:Date.now(),name:`${q.name} (Copy)`,status:"Draft",isVO:false,parentId:null,voNumber:0,createdAt:todayStr(),updatedAt:todayStr()};
-    copy.client={...copy.client,ref:genRef(),date:todayStr()};
-    const v=[copy,...versions];setVersions(v);saveVersions(v);cloudPush(copy);
+  // ── TRASH (30-day retention) ──────────────────────────────────────────────
+  // Nothing is destroyed on delete. Items move to Trash with a timestamp and can be
+  // restored intact. Only a Director can purge early. Signed contracts cannot be trashed.
+  const[showTrash,setShowTrash]=useState(false);
+  const trashed=versions.filter(q=>q.deletedAt);
+  const live=versions.filter(q=>!q.deletedAt);
+
+  const trash=q=>{
+    if(q.status==="Signed"){
+      alert("This quote is SIGNED and cannot be deleted.\n\nA signed quote is an executed contract. To change it, raise a Variation Order.");
+      return;
+    }
+    const kids=versions.filter(x=>x.parentId===q.id&&!x.deletedAt);
+    const msg=kids.length
+      ? `Move to Trash?\n\n${q.name}\nRef ${q.client?.ref||"—"}\n\nIts ${kids.length} Variation Order(s) will go with it, and come back together if restored.\n\nRecoverable for ${TRASH_DAYS} days.`
+      : `Move to Trash?\n\n${q.name}\nRef ${q.client?.ref||"—"}\n\nRecoverable for ${TRASH_DAYS} days.`;
+    if(!window.confirm(msg))return;
+    const stamp=Date.now();
+    const ids=new Set([q.id,...kids.map(k=>k.id)]);
+    const upd=versions.map(x=>ids.has(x.id)?{...x,deletedAt:stamp}:x);
+    setVersions(upd);saveVersions(upd);
+    upd.filter(x=>ids.has(x.id)).forEach(cloudPush);
   };
+
+  const restore=q=>{
+    const kids=versions.filter(x=>x.parentId===q.id&&x.deletedAt===q.deletedAt);
+    const ids=new Set([q.id,...kids.map(k=>k.id)]);
+    const upd=versions.map(x=>{if(!ids.has(x.id))return x;const{deletedAt,...rest}=x;return rest;});
+    setVersions(upd);saveVersions(upd);
+    upd.filter(x=>ids.has(x.id)).forEach(cloudPush);
+  };
+
+  const purge=q=>{
+    if(USER_ROLE<ROLES.director){alert("Only a Director can permanently delete.");return;}
+    const pin=window.prompt("PERMANENT DELETE — this cannot be undone.\n\nEnter Director PIN:");
+    if(pin===null)return;
+    if(pin!==DIRECTOR_PIN){alert("Incorrect Director PIN. Nothing was deleted.");return;}
+    const ref=q.client?.ref||"";
+    const typed=window.prompt(`Type the reference to confirm permanent deletion:\n${ref}`);
+    if(typed===null)return;
+    if(typed.trim()!==ref){alert("Reference did not match. Nothing was deleted.");return;}
+    const v=versions.filter(x=>x.id!==q.id);
+    setVersions(v);saveVersions(v);cloudDelete(q.id);
+  };
+
+  const voBusy=useRef(false);
   const createVO=q=>{
-    const voCount=(q.voCount||0)+1;
+    if(voBusy.current)return;              // guard: a second click before render can't fire again
+    voBusy.current=true;
+    setTimeout(()=>{voBusy.current=false;},1200);
+    // Derive from the VOs that ACTUALLY exist — a stale voCount can no longer skew the number.
+    const existing=versions.filter(x=>x.parentId===q.id).map(x=>Number(x.voNumber)||0);
+    const voCount=(existing.length?Math.max(...existing):0)+1;
     const updParent={...q,voCount,parentTotal_snapshot:calcQuoteTotal(q)};
     const updated=versions.map(x=>x.id===q.id?updParent:x);
     saveVersions(updated);setVersions(updated);
+    cloudPush(updParent);                  // was local-only — voCount never reached Supabase
     onNewVO(updParent);
   };
   const[search,setSearch]=useState("");
-  const parents=versions.filter(q=>!q.isVO).filter(q=>{
+  const parents=live.filter(q=>!q.isVO).filter(q=>{
     if(!search.trim())return true;
     const s=search.toLowerCase();
     return(q.name||"").toLowerCase().includes(s)||(q.client?.name||"").toLowerCase().includes(s)||(q.projectName||"").toLowerCase().includes(s)||(q.client?.ref||"").toLowerCase().includes(s);
   });
-  const vosOf=id=>versions.filter(q=>q.parentId===id);
+  const vosOf=id=>live.filter(q=>q.parentId===id);
   return(
     <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh"}}>
       <div style={{background:C.ink,padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -811,11 +872,51 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
         <div style={{display:"flex",gap:8}}>
           <span style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginRight:4}}>{SESSION?SESSION.name:""}</span>
           <button onClick={()=>sb.auth.signOut().then(()=>window.location.reload())} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 12px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Sign out</button>
+          <button onClick={()=>setShowTrash(t=>!t)} style={{background:showTrash?C.stone+"33":"transparent",border:`1px solid ${trashed.length?C.terra:C.stone+"44"}`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:trashed.length?C.terra:C.stone,fontFamily:T.sans}}>
+            🗑 Trash{trashed.length?` (${trashed.length})`:""}
+          </button>
           {USER_ROLE>=ROLES.director&&<button onClick={onAdmin} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>⚙ Admin</button>}
           <NewQuoteMenu onNew={onNew}/>
         </div>
       </div>
       <div style={{maxWidth:920,margin:"0 auto",padding:"28px 20px"}}>
+        {showTrash&&(
+          <div style={{background:C.white,border:`1px solid ${C.terra}44`,borderRadius:4,marginBottom:18,overflow:"hidden"}}>
+            <div style={{padding:"14px 20px",background:"#FFF8F2",borderBottom:`1px solid ${C.terra}33`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{fontFamily:T.serif,fontSize:18,fontWeight:300,color:C.ink}}>Trash</div>
+                <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginTop:2}}>Items are kept for {TRASH_DAYS} days, then permanently removed. Restore anything at any time before then.</div>
+              </div>
+              <button onClick={()=>setShowTrash(false)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Close</button>
+            </div>
+            {trashed.length===0?(
+              <div style={{padding:"30px",textAlign:"center",fontSize:12,color:C.stone,fontFamily:T.sans}}>Trash is empty.</div>
+            ):trashed.map(q=>{
+              const d=daysLeft(q);
+              const urgent=d!==null&&d<=7;
+              return(
+                <div key={q.id} style={{padding:"12px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      {q.isVO&&<span style={{background:C.terra,color:"#fff",borderRadius:3,padding:"1px 6px",fontSize:9,fontWeight:700}}>VO-{q.voNumber}</span>}
+                      <span style={{fontFamily:T.serif,fontSize:15,fontWeight:300,color:C.stone}}>{q.name||"Untitled"}</span>
+                    </div>
+                    <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginTop:2}}>{q.client?.ref||"—"} · {q.client?.name||"—"}</div>
+                  </div>
+                  <div style={{fontSize:11,fontFamily:T.sans,color:urgent?C.danger:C.stone,fontWeight:urgent?600:400,minWidth:110}}>
+                    {d>0?`${d} day${d===1?"":"s"} left`:"purging soon"}
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>restore(q)} style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>↩ Restore</button>
+                    {USER_ROLE>=ROLES.director&&(
+                      <button onClick={()=>purge(q)} title="Permanently delete now — Director only" style={{background:"transparent",border:`1px solid ${C.danger}55`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:"pointer",color:C.danger,fontFamily:T.sans}}>Delete forever</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
           <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.ink}}>All Quotations</div>
           <input placeholder="Search by name, client, ref…" value={search} onChange={e=>setSearch(e.target.value)}
@@ -851,7 +952,9 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
                       {q.status==="Signed"&&<button onClick={()=>createVO(q)} style={{background:C.terraPale,border:`1px solid ${C.terra}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.terra,fontWeight:600}}>+ VO</button>}
                       <button onClick={()=>dup(q)} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>Duplicate</button>
                       <button onClick={()=>onOpen(q)} style={{background:C.ink,border:"none",borderRadius:3,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.gold,fontWeight:600}}>Open →</button>
-                      <button onClick={()=>del(q.id)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.danger}}>✕</button>
+                      <button onClick={()=>trash(q)} title={q.status==="Signed"?"Signed contracts cannot be deleted":"Move to Trash — recoverable for 30 days"}
+                        style={{background:"transparent",border:`1px solid ${q.status==="Signed"?C.border:C.danger+"55"}`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:q.status==="Signed"?"not-allowed":"pointer",fontFamily:T.sans,color:q.status==="Signed"?C.border:C.danger,opacity:q.status==="Signed"?0.4:1}}>
+                        {q.status==="Signed"?"🔒":"✕"}</button>
                     </div>
                   </div>
                   {vos.map(vo=>{
@@ -869,7 +972,9 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
                         </div>
                         <div style={{display:"flex",gap:6}}>
                           <button onClick={()=>onOpen(vo)} style={{background:C.terra,border:"none",borderRadius:3,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:"#fff",fontWeight:600}}>Open →</button>
-                          <button onClick={()=>del(vo.id)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.danger}}>✕</button>
+                          <button onClick={()=>trash(vo)} title={vo.status==="Signed"?"Signed VOs cannot be deleted":"Move to Trash — recoverable for 30 days"}
+                            style={{background:"transparent",border:`1px solid ${vo.status==="Signed"?C.border:C.danger+"55"}`,borderRadius:3,padding:"6px 10px",fontSize:11,cursor:vo.status==="Signed"?"not-allowed":"pointer",fontFamily:T.sans,color:vo.status==="Signed"?C.border:C.danger,opacity:vo.status==="Signed"?0.4:1}}>
+                            {vo.status==="Signed"?"🔒":"✕"}</button>
                         </div>
                       </div>
                     );
@@ -1070,7 +1175,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[pendingApprovals,setPendingApprovals]=useState(initData.pendingApprovals||[]);
   // Push a gated action to the dashboard queue for a director to approve later.
   const pushToDashboard=(kind,detail)=>{
-    setPendingApprovals(p=>[...p,{id:`ap-${Date.now()}`,kind,detail,ref:client.ref||"—",by:idStaff||"staff",at:todayStr(),status:"pending"}]);
+    setPendingApprovals(p=>[...p,{id:`ap-${Date.now()}${Math.random().toString(36).slice(2,6)}`,kind,detail,ref:client.ref||"—",by:idStaff||"staff",at:todayStr(),status:"pending"}]);
     setPoaPinPrompt(null);
     alert("Sent to dashboard for director approval. It will appear in the approvals queue.");
   };
@@ -1237,7 +1342,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Duplicate a line within the same zone (e.g. two wardrobes). Creates a dupe, turns it on, flashes it.
   const duplicateLine=(item,trade,zone)=>{
     if(isLocked)return;
-    const nid=`dupe-${item.id}-${Date.now()}`;
+    const nid=`dupe-${item.id}-${Date.now()}${Math.random().toString(36).slice(2,6)}`;
     setDupes(d=>[...d,{id:nid,srcId:item.srcId||item.id,tradeId:trade.id,zone,desc:item.desc,unit:item.unit,price:item.srcId?item.price:getEP(item),carpentry:item.carpentry,addon:item.addon,poa:item.poa}]);
     setItemOn(o=>({...o,[nid]:true}));
     setQtys(q=>({...q,[nid]:parseFloat(qtys[item.id])||1}));
@@ -1301,7 +1406,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
   const saveCustom=()=>{
     if(!customForm?.desc||!customForm?.price)return;
-    const id=`c${Date.now()}`;
+    const id=`c${Date.now()}${Math.random().toString(36).slice(2,6)}`;
     const capDesc=customForm.desc.charAt(0).toUpperCase()+customForm.desc.slice(1);
     setCustoms(c=>[...c,{id,tradeId:customForm.tradeId,zone:customForm.zone||"Whole House",desc:capDesc,unit:customForm.unit||"LS",price:parseFloat(customForm.price)||0,approved:false}]);
     setCustomForm(null);
@@ -2273,13 +2378,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
               {usePaynow&&(
                 <div style={{paddingTop:14,borderTop:`1px solid ${C.border}`,display:"flex",gap:20,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{width:120,height:120,border:`2px solid #8B1A8B`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:"#FAF5FA",flexShrink:0}}>
-                    <div style={{textAlign:"center",padding:8}}>
-                      <div style={{fontSize:10,color:"#8B1A8B",fontFamily:T.sans,fontWeight:700,marginBottom:4}}>PAYNOW QR</div>
-                      <div style={{fontSize:8,color:C.stone,fontFamily:T.sans}}>UEN 202041797K</div>
-                      <div style={{fontSize:8,color:C.stone,fontFamily:T.sans,marginTop:2}}>Upload in Admin panel</div>
-                    </div>
-                  </div>
+                  <img src={PAYNOW_QR} alt="PayNow QR" style={{width:120,height:120,border:`2px solid #8B1A8B`,borderRadius:8,background:"#fff",padding:5,flexShrink:0,objectFit:"contain"}}/>
                   <div>
                     <div style={{fontFamily:T.serif,fontSize:17,fontWeight:300,marginBottom:5}}>Scan to pay</div>
                     <div style={{fontSize:13,color:C.ink,fontWeight:600,fontFamily:T.sans,marginBottom:3}}>Ikigai Interior Pte Ltd</div>
