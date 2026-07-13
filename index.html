@@ -137,7 +137,8 @@ const CC_FIXED="admin@ikigaiinterior.com,work@ikigaiinterior.com";
 const genRef=()=>"DRAFT-"+Math.random().toString(36).slice(2,8).toUpperCase();
 // Collision-proof id. Date.now() alone repeats within the same millisecond — two quick
 // clicks produced two records with the SAME id, which Supabase upsert then merged/overwrote.
-const newId=()=>Number(String(Date.now()).slice(-10)+String(Math.floor(Math.random()*900+100)));
+let _idSeq=Math.floor(Math.random()*1000);
+const newId=()=>Date.now()*1000+((_idSeq++)%1000);
 const isDraftRef=r=>!r||String(r).startsWith("DRAFT-");
 // Server-issued, collision-proof
 const issueRef=async(entity)=>{
@@ -172,8 +173,9 @@ const PROJECT_TYPES={
 };
 const PT=k=>PROJECT_TYPES[k]||PROJECT_TYPES.condo;
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
-const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier",sub:"Non-GST",gst:false}];
-const PAY_PRESETS={vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
+const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",legal:"IKIGAI INTERIOR PTE LTD",uen:"202041797K",gstReg:"202041797K",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier Pte Ltd",legal:"IKIGAI DESIGN ATELIER PTE LTD",uen:"202606425G",gstReg:null,sub:"Non-GST · UEN 202606425G",gst:false}];
+const entReg=e=>e.gstReg?`UEN ${e.uen} · GST Reg ${e.gstReg}`:`UEN ${e.uen}`;
+const PAY_PRESETS={full100:{label:"100% Upon Completion",minRole:2,items:[{pct:100,label:"Full payment upon practical completion of works"}]},vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
 const ROLES={staff:1,senior:2,director:3};
 let SESSION=null;            // {name,email,role}
 let USER_ROLE=ROLES.staff;   // set on login
@@ -536,7 +538,15 @@ const cloudPull=async()=>{
   }
   CLOUD_READY=true;return CLOUD;
 };
-const cloudPush=async q=>{await sb.from("quotes").upsert({id:q.id,ref:q.client?.ref||null,payload:q});};
+let CLOUD_FAIL=false;
+const setCloudFail=v=>{CLOUD_FAIL=v;try{window.dispatchEvent(new CustomEvent("cloudstate",{detail:v}));}catch{}};
+const cloudPush=async q=>{
+  try{
+    const{error}=await sb.from("quotes").upsert({id:q.id,ref:q.client?.ref||null,payload:q});
+    if(error){console.error("cloudPush failed",error);setCloudFail(true);return false;}
+    setCloudFail(false);return true;
+  }catch(e){console.error("cloudPush threw",e);setCloudFail(true);return false;}
+};
 const cloudDelete=async id=>{await sb.from("quotes").delete().eq("id",id);};
 const loadTrades=()=>{
   try{
@@ -1400,7 +1410,7 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,sig,voAdds,voOmits,voApproved,revised]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,poaApproved,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals]);
 
   const buildSaveData=()=>({
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
@@ -1426,14 +1436,27 @@ function QuoteBuilder({initData,onSave,onBack}){
     {key:"clientName",     label:"Client name",          ok:!!(sig.clientName||"").trim()},
     {key:"agreed",         label:"Client acceptance",    ok:!!sig.agreed}
   ];
-  const canExecute=execChecks.every(c=>c.ok);
+  const payValid=payKey!=="custom"||Math.abs(cpTotal-100)<0.01;
+  const canExecute=execChecks.every(c=>c.ok)&&payValid;
+  // A payment tick asserts money changed hands. Director PIN only.
+  const togglePaid=key=>{
+    if(sig[key]){ // un-ticking is also a director action
+      if(window.prompt("Director PIN to REMOVE this payment confirmation:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+      setSig(s=>({...s,[key]:false}));return;
+    }
+    if(window.prompt("Director PIN to confirm PAYMENT RECEIVED:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+    setSig(s=>({...s,[key]:true}));
+  };
   const executeContract=async()=>{
+    if(!payValid){alert(`Cannot execute — the custom payment schedule totals ${cpTotal}%, not 100%.\n\nFix the stages before executing.`);return;}
     if(!canExecute){alert("Cannot execute — the contract is not fully signed.");return;}
     if(!window.confirm(
       `EXECUTE CONTRACT\n\n${client.name||"Client"} · ${client.ref}\n${fmt(total)}\n\n`+
       `This locks the document permanently. It cannot be edited, deleted, or reverted.\n\nProceed?`))return;
     setStatus("Signed");
     setRevised(false);
+    const okSaved=await cloudPush({...buildSaveData(),status:"Signed",revised:false});
+    if(!okSaved){alert("⚠️ EXECUTED ON SCREEN BUT NOT SAVED TO THE CLOUD.\n\nDo not close this tab. Check your connection and press Save.");return;}
     // No invoice number is issued here. Invoicing is QuickBooks' job — two systems minting
     // invoice numbers would be impossible to reconcile. The signed quote + its reference is
     // what Accounts works from.
@@ -1565,7 +1588,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const designCustomSub=useMemo(()=>designCustoms.filter(c=>c.approved&&isOn(c.id)).reduce((s,c)=>s+(parseFloat(qtys[c.id])||1)*c.price,0),[designCustoms,itemOn,qtys]);
   const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0)+designCustomSub,[designOn,unitSqft,projectType,designCustomSub]);
   const subtotal=isVO?voNet:(designSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0));
-  const discAmt=discOk?(parseFloat(disc)||0):0;
+  const discAmt=discOk?Math.min(Math.max(parseFloat(disc)||0,0),subtotal):0;
   const afterDisc=subtotal-discAmt;
   const gstAmt=gst?afterDisc*0.09:0;
   const total=afterDisc+gstAmt;
@@ -1979,7 +2002,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             <div style={{flex:1,minWidth:220}}>
               <label style={sL}>Payment Schedule</label>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {Object.entries(PAY_PRESETS).filter(([,v])=>USER_ROLE>=v.minRole).map(([k,v])=>(
+                {Object.entries(PAY_PRESETS).filter(([k,v])=>USER_ROLE>=v.minRole&&(isVO?k==="vo100":k!=="vo100")).map(([k,v])=>(
                   <button key={k} onClick={()=>setPayKey(k)} style={{background:k===payKey&&payKey!=="custom"?C.ink:C.creamD,color:k===payKey&&payKey!=="custom"?C.gold:C.stone,border:`1px solid ${k===payKey&&payKey!=="custom"?C.gold:C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>
                     {v.label}{v.minRole>=2&&<span style={{fontSize:8,color:C.terra,marginLeft:3}}>★</span>}
                   </button>
@@ -2009,7 +2032,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
         {/* RUNNING TOTAL */}
         {subtotal>0&&<div style={{background:C.ink,borderRadius:4,padding:"9px 18px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-          <span style={{fontSize:9,fontWeight:600,letterSpacing:2,color:C.stone}}>RUNNING TOTAL {gst?"(incl. GST 9%)":"(excl. GST)"}</span>
+          <span style={{fontSize:9,fontWeight:600,letterSpacing:2,color:C.stone}}>RUNNING TOTAL {gst?"(incl. GST 9%)":""}</span>
           <span style={{fontFamily:T.serif,fontSize:24,fontWeight:300,color:C.gold}}>{fmt(total)}</span>
         </div>}
 
@@ -2530,7 +2553,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
               {/* Payment schedule table */}
               <div style={{borderTop:"1px solid #3A2E22",paddingTop:12}}>
-                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>PAYMENT SCHEDULE — {payKey==="custom"?"CUSTOM":PAY_PRESETS[payKey]?.label?.toUpperCase()}</div>
+                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>PAYMENT SCHEDULE — {payKey==="custom"?"CUSTOM":(isVO?"VARIATION ORDER — 100% ON COMPLETION":(PAY_PRESETS[payKey]?.label||"").replace(/^Variation Order — /,"").toUpperCase())}</div>
                 {/* Design fee pre-stage */}
                 {designSubtotal>0&&(
                   <div style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 36px",gap:8,padding:"8px 0",borderBottom:"1px solid #3A2E22",alignItems:"center"}}>
@@ -2540,7 +2563,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                       <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:1}}>To be collected before works commence. Deducted from Stage 1 upon receipt.</div>
                     </div>
                     <div style={{fontFamily:T.serif,fontSize:15,color:C.gold,textAlign:"right"}}>{fmt(designSubtotal)}</div>
-                    <div onClick={()=>{if(!isFullyLocked)setSig(s=>({...s,paid_design:!s.paid_design}));}}
+                    <div onClick={()=>togglePaid("paid_design")}
                       style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${designPaid?C.success:"#5A4A3A"}`,background:designPaid?C.success:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                       {designPaid&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                     </div>
@@ -2564,7 +2587,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                         {isStage1&&designPaid&&rawAmt!==displayAmt&&<div style={{fontSize:9,color:C.stone,fontFamily:T.sans,textDecoration:"line-through"}}>{fmt(rawAmt)}</div>}
                         <div style={{fontSize:9,color:C.stone,fontFamily:T.sans}}>{p.pct}%</div>
                       </div>
-                      <div onClick={()=>{if(!isFullyLocked)setSig(s=>({...s,[`paid_${i}`]:!s[`paid_${i}`]}));}}
+                      <div onClick={()=>togglePaid(`paid_${i}`)}
                         style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${isPaid?C.success:"#5A4A3A"}`,background:isPaid?C.success:"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
                         {isPaid&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                       </div>
@@ -2694,7 +2717,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
               {/* INTRO NOTE */}
               <div style={{padding:"14px 32px",background:"#FDFBF7",borderBottom:`1px solid ${C.border}`,fontSize:11,color:C.stone,lineHeight:1.7,fontFamily:T.sans}}>
-                All rates stated are per unit and exclusive of GST unless otherwise indicated. Quantities, scope and final pricing to be confirmed in the formal quotation. Rates are subject to site conditions, material selection and project complexity.
+                All rates stated are per unit{gst?" and exclusive of GST unless otherwise indicated":""}. Quantities, scope and final pricing to be confirmed in the formal quotation. Rates are subject to site conditions, material selection and project complexity.
               </div>
 
               {/* TRADES */}
@@ -2767,8 +2790,8 @@ function QuoteBuilder({initData,onSave,onBack}){
               {/* FOOTER */}
               <div style={{padding:"20px 32px",background:C.ink,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
                 <div>
-                  <div style={{fontFamily:T.serif,fontSize:12,color:C.gold,letterSpacing:3,marginBottom:4}}>IKIGAI INTERIOR PTE LTD</div>
-                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>UEN 202041797K · GST Reg 202041797K</div>
+                  <div style={{fontFamily:T.serif,fontSize:12,color:C.gold,letterSpacing:3,marginBottom:4}}>{ent.legal}</div>
+                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{entReg(ent)}</div>
                   <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2}}>work@ikigaiinterior.com · +65 8188 7556 · www.ikigaiinterior.com</div>
                   <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:2}}>Centennial Tower L18, 3 Temasek Ave, Singapore 039190</div>
                 </div>
@@ -2803,7 +2826,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
               <div style={{textAlign:"right",fontFamily:T.sans}}>
                 <div style={{fontFamily:T.serif,fontSize:22,fontWeight:300,color:C.gold}}>{fmt(total)}</div>
-                <div style={{fontSize:9,color:C.stone,letterSpacing:1}}>{gst?"INCL. GST 9%":"EXCL. GST"}</div>
+                <div style={{fontSize:9,color:C.stone,letterSpacing:1}}>{gst?"INCL. GST 9%":""}</div>
               </div>
             </div>
           </div>
@@ -2903,7 +2926,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
             </div>
             <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.gold}33`,fontSize:10,color:C.stone,fontFamily:T.sans}}>
-              IKIGAI INTERIOR PTE LTD · UEN 202041797K · GST Reg 202041797K · Dylan Lu, Project Director · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
+              {ent.legal} · {entReg(ent)} · Dylan Lu, Project Director · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
             </div>
           </div>
 
@@ -2994,17 +3017,18 @@ function QuoteBuilder({initData,onSave,onBack}){
           {/* PAYMENT SCHEDULE */}
           <div className="print-summary" style={{background:C.ink,borderRadius:4,padding:"18px 22px",marginBottom:10}}>
             <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:2}}>PAYMENT SCHEDULE</div>
-            <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,marginBottom:8}}>{payKey==="custom"?"Custom Schedule":PAY_PRESETS[payKey]?.label}</div>
+            <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,marginBottom:8}}>{isVO?"Variation Order — 100% on Completion":(payKey==="custom"?"Custom Schedule":(PAY_PRESETS[payKey]?.label||"").replace(/^Variation Order — /,""))}</div>
             {activePayItems.map((p,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #3A2E22"}}>
                 <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>{i+1}. {p.label}</div>
-                <div style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{p.pct}% — {fmt(total*(parseFloat(p.pct)||0)/100)}</div>
+                <div style={{fontFamily:T.serif,fontSize:14,color:C.gold}}>{p.pct}% — {fmt(grandTotal*(parseFloat(p.pct)||0)/100)}</div>
               </div>
             ))}
             <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #3A2E22"}}>
               <div style={{fontSize:9,color:C.stone,letterSpacing:1,marginBottom:2}}>PAYMENT DETAILS</div>
               <div style={{fontFamily:T.serif,fontSize:14,color:"#E8E0D4"}}>IKIGAI INTERIOR PTE LTD</div>
               <div style={{fontSize:11,color:C.stone,marginTop:2,fontFamily:T.sans}}>DBS Corporate · Acc 072-032036-0 · Swift: DBSSSGSG · PayNow UEN: 202041797K</div>
+              {ent.id!=="ikigai"&&<div style={{fontSize:10,color:C.gold,marginTop:6,fontFamily:T.sans,fontStyle:"italic"}}>Payment is collected via Ikigai Interior Pte Ltd, the group collection account. Please quote reference {client.ref||"—"}.</div>}
             </div>
             {entity!=="atelier"&&(
               <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid #3A2E22",display:"flex",gap:16,alignItems:"center"}}>
@@ -3090,6 +3114,22 @@ function LoginGate({onIn}){
   );
 }
 
+function CloudBanner(){
+  const[fail,setFail]=useState(false);
+  useEffect(()=>{
+    const h=e=>setFail(!!e.detail);
+    window.addEventListener("cloudstate",h);
+    return()=>window.removeEventListener("cloudstate",h);
+  },[]);
+  if(!fail)return null;
+  return(
+    <div className="no-print" style={{position:"fixed",top:0,left:0,right:0,zIndex:9999,background:"#B3261E",color:"#fff",
+      padding:"9px 16px",fontFamily:T.sans,fontSize:12,fontWeight:600,textAlign:"center",letterSpacing:0.3,
+      boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}>
+      ⚠️ NOT SAVED TO THE CLOUD — do not close this tab. Check your connection, then press Save.
+    </div>
+  );
+}
 function App(){
   const isAdmin=window.location.search.includes("admin");
   const[screen,setScreen]=useState(isAdmin?"admin":"list");
@@ -3136,9 +3176,9 @@ function App(){
     </div>);
   if(!authed)return <LoginGate/>;
 
-  if(screen==="admin")return <AdminPanel onBack={()=>setScreen("list")}/>;
-  if(screen==="builder"&&activeQuote)return <QuoteBuilder initData={activeQuote} onSave={saveQuote} onBack={goBack}/>;
-  return <VersionManager onOpen={openQuote} onNew={newQuote} onNewVO={newVO} onAdmin={()=>setScreen("admin")}/>;
+  if(screen==="admin")return <><CloudBanner/><AdminPanel onBack={()=>setScreen("list")}/></>;
+  if(screen==="builder"&&activeQuote)return <><CloudBanner/><QuoteBuilder initData={activeQuote} onSave={saveQuote} onBack={goBack}/></>;
+  return <><CloudBanner/><VersionManager onOpen={openQuote} onNew={newQuote} onNewVO={newVO} onAdmin={()=>setScreen("admin")}/></>;
 }
 
 ReactDOM.render(<App/>,document.getElementById("root"));
