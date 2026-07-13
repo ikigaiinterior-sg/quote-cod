@@ -175,7 +175,7 @@ const PT=k=>PROJECT_TYPES[k]||PROJECT_TYPES.condo;
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
 const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",legal:"IKIGAI INTERIOR PTE LTD",uen:"202041797K",gstReg:"202041797K",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier Pte Ltd",legal:"IKIGAI DESIGN ATELIER PTE LTD",uen:"202606425G",gstReg:null,sub:"Non-GST · UEN 202606425G",gst:false}];
 const entReg=e=>e.gstReg?`UEN ${e.uen} · GST Reg ${e.gstReg}`:`UEN ${e.uen}`;
-const PAY_PRESETS={full100:{label:"100% Upon Completion",minRole:2,items:[{pct:100,label:"Full payment upon practical completion of works"}]},vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
+const PAY_PRESETS={confirm100:{label:"100% Upon Confirmation",minRole:2,items:[{pct:100,label:"Full payment upon confirmation of agreement"}]},full100:{label:"100% Upon Completion",minRole:2,items:[{pct:100,label:"Full payment upon practical completion of works"}]},vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
 const ROLES={staff:1,senior:2,director:3};
 let SESSION=null;            // {name,email,role}
 let USER_ROLE=ROLES.staff;   // set on login
@@ -1598,6 +1598,10 @@ function QuoteBuilder({initData,onSave,onBack}){
   const effPayKey=(!isVO&&payKey==="vo100")?"full100":payKey;
   const activePayItems=useMemo(()=>effPayKey==="custom"?customPay:PAY_PRESETS[effPayKey]?.items||[],[effPayKey,customPay]);
   const cpTotal=customPay.reduce((s,p)=>s+(parseFloat(p.pct)||0),0);
+  // Design-only: design fees are on, but no construction trade carries any value.
+  // No construction contracted => no workmanship warranty may be issued.
+  const designOnly=!isVO&&designSubtotal>0&&tradeSubs.every(t=>t.sub===0);
+  useEffect(()=>{if(designOnly&&tab==="warranty")setTab("summary");},[designOnly,tab]);
 
   const saveCustom=()=>{
     if(!customForm?.desc||!customForm?.price)return;
@@ -1625,7 +1629,25 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Print scope: pre-signing only the Summary page may print freely.
   // Full (all pages) needs Director PIN — unless status is Signed, then it is free.
   const printScopeRef=useRef("full");
-  const runPrint=scope=>{printScopeRef.current=scope;window.print();};
+  // Chrome's Save-as-PDF filename comes from document.title — the only hook available.
+  // Swap it in for the print, restore it after. Non-filename characters are stripped.
+  const fileSafe=v=>String(v||"").replace(/[^A-Za-z0-9]+/g," ").trim().split(" ")
+    .map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join("").slice(0,40);
+  const pdfName=()=>{
+    const ref=(client.ref||"DRAFT").replace(/[^A-Za-z0-9-]/g,"");
+    const who=fileSafe(client.name);
+    const proj=fileSafe(projectName);
+    return [ref,who,proj].filter(Boolean).join("_");
+  };
+  const runPrint=scope=>{
+    printScopeRef.current=scope;
+    const prevTitle=document.title;
+    document.title=pdfName();
+    const restore=()=>{document.title=prevTitle;window.removeEventListener("afterprint",restore);};
+    window.addEventListener("afterprint",restore);
+    window.print();
+    setTimeout(restore,4000); // belt-and-braces if afterprint never fires
+  };
   const doPrintSummary=()=>{runPrint("summary");};
   // Full print is unlocked — this IS how quotes are issued to clients.
   const doFullPrint=()=>{runPrint("full");};
@@ -2394,7 +2416,7 @@ function QuoteBuilder({initData,onSave,onBack}){
       {/* PREVIEW */}
       {step==="preview"&&(<>
         <div className="no-print" style={{display:"flex",gap:0,marginBottom:14,borderRadius:3,overflow:"hidden",border:`1px solid ${C.border}`,width:"fit-content",flexWrap:"wrap"}}>
-          {(isVO?[["summary","Variation Order"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"]]:[["quote","All Items"],["summary","Summary"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"],["sor","SOR"]]).map(([k,lbl])=>(
+          {(isVO?[["summary","Variation Order"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"]]:[["quote","All Items"],["summary","Summary"],["tc","T & C"],...(designOnly?[]:[["warranty","Warranty"]]),["sign","Signature"],["payment","Payment"],["sor","SOR"]]).map(([k,lbl])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:tab===k?C.ink:C.white,color:tab===k?C.gold:C.stone,border:"none",padding:"9px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,borderRight:`1px solid ${C.border}`}}>{lbl}</button>
           ))}
         </div>
@@ -2446,7 +2468,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
             {/* Page sign status */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:20}}>
-              {[["All Items",sig.allItemsCanvas],["Summary",sig.summaryCanvas],["T&C",sig.tcCanvas],["Warranty",sig.warrantyCanvas]].map(([lbl,val])=>(
+              {[["All Items",sig.allItemsCanvas],["Summary",sig.summaryCanvas],["T&C",sig.tcCanvas],...(designOnly?[]:[["Warranty",sig.warrantyCanvas]])].map(([lbl,val])=>(
                 <div key={lbl} style={{padding:"8px 12px",borderRadius:3,border:`1px solid ${val?C.success:C.border}`,background:val?"#EAF3EA":C.creamD,display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:12,color:val?C.success:C.stone}}>{val?"✓":"○"}</span>
                   <span style={{fontSize:10,color:val?C.success:C.stone,fontFamily:T.sans,fontWeight:600}}>{lbl}</span>
@@ -2470,7 +2492,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
               {/* Director */}
               <div style={{padding:"16px",background:C.cream,borderRadius:4,border:`1px solid ${C.border}`}}>
-                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>IKIGAI INTERIOR PTE LTD — PROJECT DIRECTOR</div>
+                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>{ent.legal} — PROJECT DIRECTOR</div>
                 <div style={{fontFamily:T.serif,fontSize:14,fontWeight:300,marginBottom:7,color:C.ink}}>Dylan Lu</div>
                 <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
                 <input value={sig.directorDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,directorDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
@@ -2928,7 +2950,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
             </div>
             <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.gold}33`,fontSize:10,color:C.stone,fontFamily:T.sans}}>
-              {ent.legal} · {entReg(ent)} · Dylan Lu, Project Director · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
+              {ent.legal} · {entReg(ent)} · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
             </div>
           </div>
 
@@ -3066,7 +3088,7 @@ function QuoteBuilder({initData,onSave,onBack}){
         </div>
 
         {/* WARRANTY SCHEDULE */}
-        <div className="print-section" style={{display:(step==="preview"&&tab==="warranty")?undefined:"none",background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+        <div className="print-section" style={{display:(!designOnly&&step==="preview"&&tab==="warranty")?undefined:"none",background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
             <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:6}}>Warranty Schedule</div>
             <div style={{fontSize:12,color:C.stone,marginBottom:16,lineHeight:1.7,fontFamily:T.sans}}>Warranty commences after full handover or stay-in period, whichever is earlier. Covers workmanship & material integrity of contracted scope. Does not apply to misuse, third-party tampering, natural wear and tear, or unauthorised repair works.</div>
             <div style={{borderRadius:3,overflow:"hidden",marginBottom:20}}>
