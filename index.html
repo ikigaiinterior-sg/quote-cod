@@ -1594,7 +1594,9 @@ function QuoteBuilder({initData,onSave,onBack}){
   const total=afterDisc+gstAmt;
   const paypalFee=usePaypal?total*0.035:0;
   const grandTotal=total+paypalFee;
-  const activePayItems=useMemo(()=>payKey==="custom"?customPay:PAY_PRESETS[payKey]?.items||[],[payKey,customPay]);
+  // A quotation must never carry VO wording. Old quotes saved with payKey "vo100" self-heal.
+  const effPayKey=(!isVO&&payKey==="vo100")?"full100":payKey;
+  const activePayItems=useMemo(()=>effPayKey==="custom"?customPay:PAY_PRESETS[effPayKey]?.items||[],[effPayKey,customPay]);
   const cpTotal=customPay.reduce((s,p)=>s+(parseFloat(p.pct)||0),0);
 
   const saveCustom=()=>{
@@ -2553,7 +2555,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
               {/* Payment schedule table */}
               <div style={{borderTop:"1px solid #3A2E22",paddingTop:12}}>
-                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>PAYMENT SCHEDULE — {payKey==="custom"?"CUSTOM":(isVO?"VARIATION ORDER — 100% ON COMPLETION":(PAY_PRESETS[payKey]?.label||"").replace(/^Variation Order — /,"").toUpperCase())}</div>
+                <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>PAYMENT SCHEDULE — {effPayKey==="custom"?"CUSTOM":(isVO?"VARIATION ORDER — 100% ON COMPLETION":(PAY_PRESETS[effPayKey]?.label||"").toUpperCase())}</div>
                 {/* Design fee pre-stage */}
                 {designSubtotal>0&&(
                   <div style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 36px",gap:8,padding:"8px 0",borderBottom:"1px solid #3A2E22",alignItems:"center"}}>
@@ -3017,7 +3019,7 @@ function QuoteBuilder({initData,onSave,onBack}){
           {/* PAYMENT SCHEDULE */}
           <div className="print-summary" style={{background:C.ink,borderRadius:4,padding:"18px 22px",marginBottom:10}}>
             <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:2}}>PAYMENT SCHEDULE</div>
-            <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,marginBottom:8}}>{isVO?"Variation Order — 100% on Completion":(payKey==="custom"?"Custom Schedule":(PAY_PRESETS[payKey]?.label||"").replace(/^Variation Order — /,""))}</div>
+            <div style={{fontFamily:T.serif,fontSize:13,color:C.gold,marginBottom:8}}>{isVO?"Variation Order — 100% on Completion":(effPayKey==="custom"?"Custom Schedule":(PAY_PRESETS[effPayKey]?.label||""))}</div>
             {activePayItems.map((p,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #3A2E22"}}>
                 <div style={{fontSize:12,color:C.stone,fontFamily:T.sans}}>{i+1}. {p.label}</div>
