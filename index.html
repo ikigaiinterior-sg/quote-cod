@@ -934,6 +934,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
     const copy={...JSON.parse(JSON.stringify(q)),id:newId(),name:`${base} (Copy${n>1?" "+n:""})`,status:"Draft",
       isVO:false,parentId:null,voNumber:0,voCount:0,parentRef:null,parentTotal:null,
       parentTotal_snapshot:null,voApproved:false,invNo:null,revised:false,deletedAt:undefined,
+      snapshot:null,   // a Draft always follows the CURRENT rate card — never inherit a frozen one
       createdAt:todayStr(),updatedAt:todayStr()};
     delete copy.deletedAt;
     copy.client={...copy.client,ref:genRef(),date:todayStr()};
@@ -1350,52 +1351,52 @@ function QuoteBuilder({initData,onSave,onBack}){
   const isVO=initData.isVO||false;
   const voNumber=initData.voNumber||0;
   const[entity,setEntityRaw]=useState(initData.entity||"ikigai");
-  const setEntity=(...a)=>{markRevised();setEntityRaw(...a);};
+  const setEntity=(...a)=>{if(!markRevised())return;setEntityRaw(...a);};
   const ent=ENTITIES.find(e=>e.id===entity);
   const[client,setClient]=useState(initData.client||{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()});
   const[idStaff,setIdStaff]=useState(initData.idStaff||(SESSION?SESSION.name:""));
   const[status,setStatus]=useState(initData.status||"Draft");
   const[unitSqft,setUnitSqftRaw]=useState(initData.unitSqft||0);
-  const setUnitSqft=(...a)=>{markRevised();setUnitSqftRaw(...a);};
+  const setUnitSqft=(...a)=>{if(!markRevised())return;setUnitSqftRaw(...a);};
   const[projectType,setProjectType]=useState(initData.projectType||"condo");
   const PTC=PT(projectType);
   const[designOn,setDesignOnRaw]=useState(initData.designOn||{});
-  const setDesignOn=(...a)=>{markRevised();setDesignOnRaw(...a);};
+  const setDesignOn=(...a)=>{if(!markRevised())return;setDesignOnRaw(...a);};
   const[qtys,setQtysRaw]=useState(initData.qtys||{});
-  const setQtys=(...a)=>{markRevised();setQtysRaw(...a);};
+  const setQtys=(...a)=>{if(!markRevised())return;setQtysRaw(...a);};
   const[itemOn,setItemOnRaw]=useState(initData.itemOn||{});
-  const setItemOn=(...a)=>{markRevised();setItemOnRaw(...a);};
+  const setItemOn=(...a)=>{if(!markRevised())return;setItemOnRaw(...a);};
   const[tiers,setTiersRaw]=useState(initData.tiers||{});
-  const setTiers=(...a)=>{markRevised();setTiersRaw(...a);};
+  const setTiers=(...a)=>{if(!markRevised())return;setTiersRaw(...a);};
   const[notes,setNotesRaw]=useState(initData.notes||{});
-  const setNotes=(...a)=>{markRevised();setNotesRaw(...a);};
+  const setNotes=(...a)=>{if(!markRevised())return;setNotesRaw(...a);};
   const[imgs,setImgs]=useState({});
   const[zoneOverride,setZoneOverrideRaw]=useState(initData.zoneOverride||{});
-  const setZoneOverride=(...a)=>{markRevised();setZoneOverrideRaw(...a);};
+  const setZoneOverride=(...a)=>{if(!markRevised())return;setZoneOverrideRaw(...a);};
   const[dupes,setDupesRaw]=useState(initData.dupes||[]);
-  const setDupes=(...a)=>{markRevised();setDupesRaw(...a);};
+  const setDupes=(...a)=>{if(!markRevised())return;setDupesRaw(...a);};
   const[openTrades,setOpenTrades]=useState(initData.openTrades||{1:true});
   const[openZones,setOpenZones]=useState(initData.openZones||{});
   const[payKey,setPayKeyRaw]=useState(initData.payKey||"standard");
-  const setPayKey=(...a)=>{markRevised();setPayKeyRaw(...a);};
+  const setPayKey=(...a)=>{if(!markRevised())return;setPayKeyRaw(...a);};
   const[customPay,setCustomPayRaw]=useState(initData.customPay||[]);
-  const setCustomPay=(...a)=>{markRevised();setCustomPayRaw(...a);};
+  const setCustomPay=(...a)=>{if(!markRevised())return;setCustomPayRaw(...a);};
   const[showCPay,setShowCPay]=useState(false);
   const[disc,setDiscRaw]=useState(initData.disc||"");
-  const setDisc=(...a)=>{markRevised();setDiscRaw(...a);};
+  const setDisc=(...a)=>{if(!markRevised())return;setDiscRaw(...a);};
   const[discOk,setDiscOkRaw]=useState(initData.discOk||false);
-  const setDiscOk=(...a)=>{markRevised();setDiscOkRaw(...a);};
+  const setDiscOk=(...a)=>{if(!markRevised())return;setDiscOkRaw(...a);};
   const[usePaypal,setUsePaypal]=useState(initData.usePaypal||false);
   const[usePaynow,setUsePaynow]=useState(initData.usePaynow||false);
   const[customs,setCustomsRaw]=useState(initData.customs||[]);
-  const setCustoms=(...a)=>{markRevised();setCustomsRaw(...a);};
+  const setCustoms=(...a)=>{if(!markRevised())return;setCustomsRaw(...a);};
   const[removalOn,setRemovalOnRaw]=useState(initData.removalOn||{});
-  const setRemovalOn=(...a)=>{markRevised();setRemovalOnRaw(...a);};
+  const setRemovalOn=(...a)=>{if(!markRevised())return;setRemovalOnRaw(...a);};
   // ── VO STATE — freehand additions & omissions. Parent is never touched.
   const[voAdds,setVoAddsRaw]=useState(initData.voAdds||[]);
-  const setVoAdds=(...a)=>{markRevised();setVoAddsRaw(...a);};
+  const setVoAdds=(...a)=>{if(!markRevised())return;setVoAddsRaw(...a);};
   const[voOmits,setVoOmitsRaw]=useState(initData.voOmits||[]);
-  const setVoOmits=(...a)=>{markRevised();setVoOmitsRaw(...a);};
+  const setVoOmits=(...a)=>{if(!markRevised())return;setVoOmitsRaw(...a);};
   const[voApproved,setVoApproved]=useState(initData.voApproved||false);
   const[voPinBuf,setVoPinBuf]=useState("");
   const[showVoPin,setShowVoPin]=useState(false);
@@ -1408,11 +1409,13 @@ function QuoteBuilder({initData,onSave,onBack}){
   const voNet=voAddSub-voOmitSub;
   const[customForm,setCustomForm]=useState(null);
   const[sig,setSig]=useState(initData.sig||{clientName:"",date:"",agreed:false,directorDate:"",idDate:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""});
+  const sigRef=useRef(sig);
+  sigRef.current=sig;   // markRevised reads the CURRENT signatures without depending on them
   const[showEmail,setShowEmail]=useState(false);
   const[showFullPrintPin,setShowFullPrintPin]=useState(false);
   const[printPin,setPrintPin]=useState("");
   const[poaPrices,setPoaPricesRaw]=useState(initData.poaPrices||{});
-  const setPoaPrices=(...a)=>{markRevised();setPoaPricesRaw(...a);};
+  const setPoaPrices=(...a)=>{if(!markRevised())return;setPoaPricesRaw(...a);};
   const[poaUnlocked,setPoaUnlocked]=useState(true);// POA fields are always editable now; approval is the gate
   const[poaApproved,setPoaApproved]=useState(initData.poaApproved||{});// {itemId:true} once senior/director approves
   const[poaPinPrompt,setPoaPinPrompt]=useState(null);
@@ -1442,8 +1445,9 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[movePicker,setMovePicker]=useState(null);// {id, tradeId, current}
   // Move an item to another zone within the same trade (trade-wide movement).
   const moveItemToZone=(item,targetZone)=>{
-    if(item.srcId){/* dupe: update its zone in dupes */setDupes(d=>d.map(x=>x.id===item.id?{...x,zone:targetZone}:x));}
-    else{setZoneOverride(o=>({...o,[item.id]:targetZone}));}
+    if(!markRevised()){setMovePicker(null);return;}   // ask ONCE
+    if(item.srcId){/* dupe: update its zone in dupes */setDupesRaw(d=>d.map(x=>x.id===item.id?{...x,zone:targetZone}:x));}
+    else{setZoneOverrideRaw(o=>({...o,[item.id]:targetZone}));}
     setMovePicker(null);
   };
   // zoneList = default zones + any custom-added zones (for dropdowns & iteration)
@@ -1500,22 +1504,39 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Any change reverts it to Draft and flags it for re-issue, so the status can never lie.
   const[revised,setRevised]=useState(initData.revised||false);
   const sentRef=useRef(status);
-  const hasInkRef=useRef(v=>typeof v==="string"&&v.length>200);
   useEffect(()=>{sentRef.current=status;},[status]);
+  // Returns TRUE if the edit may proceed, FALSE if the user cancelled.
+  // A signature is only valid against the content it was given for — so changing the
+  // content voids every signature. That is destructive, so we ASK FIRST and let them out.
   const markRevised=useCallback(()=>{
-    if(sentRef.current==="Sent"){setStatus("Draft");setRevised(true);setSnapshot(null);}
-    // A signature is only valid against the content it was given for. If the content
-    // changes, every signature on this quote is void — all parties must sign again.
-    setSig(sg=>{
-      const inked=hasInkRef.current(sg.idCanvas)||hasInkRef.current(sg.directorCanvas)||hasInkRef.current(sg.clientCanvas)||sg.agreed||(sg.clientName||"").trim();
-      if(!inked)return sg;
+    const sg=sigRef.current||{};
+    const ink=v=>typeof v==="string"&&v.length>200;
+    const inked=ink(sg.idCanvas)||ink(sg.directorCanvas)||ink(sg.clientCanvas)||sg.agreed===true||!!(sg.clientName||"").trim();
+
+    if(inked){
+      const who=[ink(sg.idCanvas)&&"Designer",ink(sg.directorCanvas)&&"Director",ink(sg.clientCanvas)&&"Client"].filter(Boolean);
+      const ok=window.confirm(
+        "⚠️  THIS QUOTE HAS BEEN SIGNED.\n\n"+
+        "Changing it will PERMANENTLY DELETE "+(who.length?who.join(" + ")+" signature(s)":"the acceptance")+
+        (sg.clientName?", the client's name":"")+", and the acceptance tick.\n\n"+
+        "The quote returns to DRAFT and must be re-issued and re-signed by all parties.\n\n"+
+        "A signature can only ever stand against the exact document it was given for.\n\n"+
+        "Continue and void the signatures?"
+      );
+      if(!ok)return false;   // abort — the edit never happens, nothing is touched
+      setSig(prev=>({...prev,idCanvas:"",directorCanvas:"",clientCanvas:"",client2Canvas:"",
+                     clientName:"",agreed:false,date:"",directorDate:"",idDate:"",
+                     allItemsCanvas:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""}));
       setSigWiped(true);
-      return {...sg,idCanvas:"",directorCanvas:"",clientCanvas:"",clientName:"",agreed:false,
-              allItemsCanvas:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""};
-    });
+    }
+    if(sentRef.current==="Sent"){setStatus("Draft");setRevised(true);setSnapshot(null);}
+    return true;
   },[]);
   const[sigWiped,setSigWiped]=useState(false);
   const[dirUnlocked,setDirUnlocked]=useState(USER_ROLE>=ROLES.director);
+  // A signature stands against an ISSUED document. A Draft has been given to nobody,
+  // so there is nothing to sign. The pads open only once the quote is Sent.
+  const notIssued=!isVO&&status==="Draft";
   const gst=ent.gst;
   const isOn=id=>itemOn[id]===true;
   // A duplicate must re-price when the finish tier changes. Freezing the price at
@@ -1569,7 +1590,6 @@ function QuoteBuilder({initData,onSave,onBack}){
   // canvas satisfied the check, and a Director PIN could force Signed on a blank document —
   // so "Signed" did not mean signed. All three parties are now mandatory.
   const hasInk=v=>typeof v==="string"&&v.length>200;   // an empty canvas still serialises to a short data-URL
-  hasInkRef.current=hasInk;
   const execChecks=[
     {key:"idCanvas",       label:"Designer signature",   ok:hasInk(sig.idCanvas)},
     {key:"directorCanvas", label:"Director signature",   ok:hasInk(sig.directorCanvas)},
@@ -1650,10 +1670,10 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Master trade toggle: ON switches every line in the trade on, OFF switches every line off.
   // Individual line toggles remain fully independent.
   const toggleTM=t=>{
-    markRevised();
+    if(!markRevised())return;              // asks once; abort cleanly if the user cancels
     const turnOn=!tradeOn(t);
     const ids=tradeIDs(t);
-    setItemOn(o=>{const n={...o};ids.forEach(id=>{n[id]=turnOn;});return n;});
+    setItemOnRaw(o=>{const n={...o};ids.forEach(id=>{n[id]=turnOn;});return n;});
     if(turnOn){
       setOpenTrades(o=>({...o,[t.id]:true}));
       if(!t.noZone){
@@ -1667,8 +1687,8 @@ function QuoteBuilder({initData,onSave,onBack}){
     setOpenZones(o=>({...o,[zK(t.id,z)]:!isOpen}));
   };
   const toggleItem=(id,tradeId,zone)=>{
-    markRevised();
-    const nowOn=!isOn(id);setItemOn(o=>({...o,[id]:nowOn}));
+    if(!markRevised())return;              // asks once; abort cleanly if the user cancels
+    const nowOn=!isOn(id);setItemOnRaw(o=>({...o,[id]:nowOn}));
     if(nowOn){setOpenTrades(o=>({...o,[tradeId]:true}));setOpenZones(o=>({...o,[zK(tradeId,zone)]:true}));}
   };
 
@@ -1678,8 +1698,9 @@ function QuoteBuilder({initData,onSave,onBack}){
   // The ⠿ handle sets draggable on its row; each zone is a drop target (see data-zone divs).
   const commitMove=(itemId,isDupe,srcTradeId,targetTradeId,targetZone)=>{
     if(srcTradeId!==targetTradeId)return;// only within same trade
-    if(isDupe){setDupes(d=>d.map(x=>x.id===itemId?{...x,zone:targetZone}:x));}
-    else{setZoneOverride(o=>({...o,[itemId]:targetZone}));}
+    if(!markRevised())return;            // ask ONCE, not once per setter
+    if(isDupe){setDupesRaw(d=>d.map(x=>x.id===itemId?{...x,zone:targetZone}:x));}
+    else{setZoneOverrideRaw(o=>({...o,[itemId]:targetZone}));}
     flashMoved(itemId);
   };
   const dragMeta=useRef(null);// {itemId,isDupe,tradeId}
@@ -1688,10 +1709,11 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Duplicate a line within the same zone (e.g. two wardrobes). Creates a dupe, turns it on, flashes it.
   const duplicateLine=(item,trade,zone)=>{
     if(isLocked)return;
+    if(!markRevised())return;            // ask ONCE — this used to prompt THREE times
     const nid=`dupe-${item.id}-${Date.now()}${Math.random().toString(36).slice(2,6)}`;
-    setDupes(d=>[...d,{id:nid,srcId:item.srcId||item.id,tradeId:trade.id,zone,desc:item.desc,unit:item.unit,price:item.srcId?item.price:getEP(item),carpentry:item.carpentry,addon:item.addon,poa:item.poa}]);
-    setItemOn(o=>({...o,[nid]:true}));
-    setQtys(q=>({...q,[nid]:parseFloat(qtys[item.id])||1}));
+    setDupesRaw(d=>[...d,{id:nid,srcId:item.srcId||item.id,tradeId:trade.id,zone,desc:item.desc,unit:item.unit,price:item.srcId?item.price:getEP(item),carpentry:item.carpentry,addon:item.addon,poa:item.poa}]);
+    setItemOnRaw(o=>({...o,[nid]:true}));
+    setQtysRaw(q=>({...q,[nid]:parseFloat(qtys[item.id])||1}));
     setOpenTrades(o=>({...o,[trade.id]:true}));setOpenZones(o=>({...o,[zK(trade.id,zone)]:true}));
     flashMoved(nid);
   };
@@ -1793,6 +1815,10 @@ function QuoteBuilder({initData,onSave,onBack}){
     return [ref,who,proj].filter(Boolean).join("_");
   };
   const runPrint=scope=>{
+    if(isDraftRef(client.ref)){
+      alert("⚠️ CANNOT PRINT — this quote has no reference number yet.\n\nPress SAVE first. It will be issued a real reference (e.g. ii-2607-057).\n\nA document sent to a client must never carry a DRAFT- reference.");
+      return;
+    }
     if(isVO&&!voApproved){
       alert("⚠️ CANNOT PRINT — this Variation Order has not been approved by a Director.\n\nAn unapproved VO must not leave the office.");
       return;
@@ -1836,6 +1862,14 @@ function QuoteBuilder({initData,onSave,onBack}){
   return(
     <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh",color:C.ink}}>
       {/* TOPBAR */}
+      {!snapshot&&!isVO&&status!=="Draft"&&<div className="no-print" style={{background:"#7A5C1E",color:"#FFF6E0",padding:"9px 16px",fontFamily:T.sans,fontSize:12,textAlign:"center",letterSpacing:0.2}}>
+        ⚠️ This {status==="Signed"?"contract":"quote"} has NO frozen rate card — it is still priced from the live rate card and will change value if rates are updated.
+        <span onClick={()=>{
+          if(window.prompt("Director PIN to freeze this quote at its current rates:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+          if(!window.confirm(`Freeze at current rates?\n\nThis quote will be permanently pinned at ${fmt(grandTotal)}.\n\nNothing about the document changes and no signature is affected — it simply stops following the rate card.`))return;
+          setSnapshot(buildSnapshot());
+        }} style={{marginLeft:12,cursor:"pointer",textDecoration:"underline",color:"#FFD98A",fontWeight:600}}>Freeze at current rates</span>
+      </div>}
       {ratesMoved&&status!=="Signed"&&<div className="no-print" style={{background:"#4A3A24",color:"#F0E6D2",padding:"9px 16px",fontFamily:T.sans,fontSize:12,textAlign:"center",letterSpacing:0.2}}>
         ⚠️ The rate card has changed since this quote was sent. It is still priced at the rates the client received.
         <span onClick={()=>{
@@ -1882,11 +1916,33 @@ function QuoteBuilder({initData,onSave,onBack}){
             })}
           </div>
           {isLocked&&<span style={{fontSize:9,color:C.terra,letterSpacing:1,fontFamily:T.sans}}>{isFullyLocked?"🔒 SIGNED":"🔒 SENT"}</span>}
+          {step==="quote"&&status==="Sent"&&(
+            <button onClick={()=>{
+              if(window.prompt("Director PIN to withdraw this quote back to Draft:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+              if(!window.confirm("Withdraw to Draft?\n\nThe quote returns to current rates and must be re-issued.\n\nAny signatures on it will be voided."))return;
+              setSig(p=>({...p,idCanvas:"",directorCanvas:"",clientCanvas:"",client2Canvas:"",clientName:"",agreed:false,date:"",directorDate:"",idDate:"",allItemsCanvas:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""}));
+              setSnapshot(null);setStatus("Draft");setRevised(true);
+            }} style={{background:"transparent",color:C.stone,border:`1px solid ${C.stone}44`,borderRadius:3,padding:"4px 9px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>↩ Withdraw</button>
+          )}
           {step==="quote"&&["Sent","Signed"].map(st=>(
             <button key={st} onClick={()=>{
               if(st===status)return;
               if(st==="Sent"){
                 if(isVO&&!voApproved){alert("This Variation Order must be approved by a Director before it can be sent.");return;}
+                const gaps=[];
+                if(!(client.name||"").trim())gaps.push("Client name");
+                if(isDraftRef(client.ref))gaps.push("Reference number — press Save to issue one");
+                if(!(grandTotal>0))gaps.push("The quote has no value — nothing is priced");
+                if(Object.values(designOn).some(Boolean)&&!(parseFloat(unitSqft)>0))gaps.push("Unit size (sqft) — design fees are priced per sqft and would all be $0.00");
+                const em=(client.email||"").trim();
+                if(!em)gaps.push("Client email — every receipt is sent to it");
+                else if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em))gaps.push(`Client email looks wrong: "${em}"`);
+                if(!(client.address||"").trim())gaps.push("Property address");
+                if(hasPending)gaps.push(`${pendingItems.length} item(s) awaiting approval`);
+                if(gaps.length){
+                  alert("This quote cannot be sent yet.\n\nStill outstanding:\n  ·  "+gaps.join("\n  ·  ")+"\n\nA document that leaves the office must be complete.");
+                  return;
+                }
                 if(!window.confirm(revised
                   ? "Re-issue as Sent?\n\nThis quote was revised after it was last sent. Make sure the client receives the updated document.\n\nIts rates will be re-frozen at today's rate card."
                   : "Mark as Sent?\n\nThe rates on this quote will be FROZEN at today's rate card, so it can never change value under the client.\n\nIt stays editable — any further change returns it to Draft for re-issue."))return;
@@ -2667,7 +2723,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
                 <input value={sig.idDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,idDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
                   style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:10,boxSizing:"border-box"}}/>
-                <SigCanvas label="Designer Signature" value={sig.idCanvas||""} onChange={v=>setSig(s=>({...s,idCanvas:v}))} locked={isFullyLocked}/>
+                <SigCanvas label="Designer Signature" value={sig.idCanvas||""} onChange={v=>setSig(s=>({...s,idCanvas:v}))} locked={isFullyLocked||notIssued} onLockedClick={notIssued&&!isFullyLocked?()=>alert("This quote has not been sent yet.\n\nMark it as SENT before anyone signs — a signature must stand against a document the client has actually received."):null}/>
               </div>
 
               {/* Director */}
@@ -2677,7 +2733,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
                 <input value={sig.directorDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,directorDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
                   style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:10,boxSizing:"border-box"}}/>
-                <SigCanvas label="Director Signature" value={sig.directorCanvas||""} onChange={v=>setSig(s=>({...s,directorCanvas:v}))} locked={isFullyLocked||!dirUnlocked} onLockedClick={isFullyLocked?null:()=>{if(window.prompt("Director PIN to sign:")===DIRECTOR_PIN)setDirUnlocked(true);else alert("Incorrect Director PIN.");}}/>
+                <SigCanvas label="Director Signature" value={sig.directorCanvas||""} onChange={v=>setSig(s=>({...s,directorCanvas:v}))} locked={isFullyLocked||notIssued||!dirUnlocked} onLockedClick={isFullyLocked?null:(notIssued?()=>alert("This quote has not been sent yet.\n\nMark it as SENT before anyone signs."):()=>{if(window.prompt("Director PIN to sign:")===DIRECTOR_PIN)setDirUnlocked(true);else alert("Incorrect Director PIN.");})}/>
               </div>
             </div>
 
@@ -2703,7 +2759,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 </div>
                 <span style={{fontSize:11,color:sig.agreed?C.success:C.stone,lineHeight:1.5,fontFamily:T.sans}}>I confirm I have read and agree to all terms, conditions, warranty and material quality standards. This forms a binding contract.</span>
               </div>
-              <SigCanvas label="Client Signature" value={sig.clientCanvas||""} onChange={v=>setSig(s=>({...s,clientCanvas:v}))} locked={isFullyLocked}/>
+              <SigCanvas label="Client Signature" value={sig.clientCanvas||""} onChange={v=>setSig(s=>({...s,clientCanvas:v}))} locked={isFullyLocked||notIssued} onLockedClick={notIssued&&!isFullyLocked?()=>alert("This quote has not been sent yet.\n\nMark it as SENT before the client signs."):null}/>
               <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8}}>
                 <span style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>Add 2nd signatory (e.g. spouse / co-owner)</span>
                 <Toggle on={!!sig.show2nd} onClick={()=>setSig(s=>({...s,show2nd:!s.show2nd}))} small/>
@@ -2996,7 +3052,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div style={{padding:"20px 32px",background:C.ink,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
                 <div>
                   <div style={{fontFamily:T.serif,fontSize:12,color:C.gold,letterSpacing:3,marginBottom:4}}>{ent.legal}</div>
-                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{entReg(ent)}</div>
+                  <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,textTransform:"uppercase",letterSpacing:0.4}}>{entReg(ent)}</div>
                   <div style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginTop:2}}>work@ikigaiinterior.com · +65 8188 7556 · www.ikigaiinterior.com</div>
                   <div style={{fontSize:9,color:C.stone,fontFamily:T.sans,marginTop:2}}>Centennial Tower L18, 3 Temasek Ave, Singapore 039190</div>
                 </div>
@@ -3130,7 +3186,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 <div style={{fontSize:9,color:C.stone,marginTop:2}}>{ent.label}</div>
               </div>
             </div>
-            <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.gold}33`,fontSize:10,color:C.stone,fontFamily:T.sans}}>
+            <div style={{marginTop:10,paddingTop:8,borderTop:`1px solid ${C.gold}33`,fontSize:10,color:C.stone,fontFamily:T.sans,textTransform:"uppercase",letterSpacing:0.4}}>
               {ent.legal} · {entReg(ent)} · +65 8188 7556 · work@ikigaiinterior.com · www.ikigaiinterior.com
             </div>
           </div>
@@ -3357,7 +3413,15 @@ function App(){
   const signOut=async()=>{await sb.auth.signOut();window.location.reload();};
   const openQuote=q=>{setActiveQuote(q);setScreen("builder");};
   const newQuote=(ptype="condo")=>{const q=blankQuote(null,ptype);openQuote(q);};
-  const newVO=parent=>{const q=blankQuote(parent);openQuote(q);};
+  const newVO=parent=>{
+    // A Variation Order varies an EXECUTED contract. If the parent is not signed, there is
+    // no contract to vary — change the quote itself instead.
+    if(!parent||parent.status!=="Signed"){
+      alert("A Variation Order can only be raised against a SIGNED contract.\n\nThis quote is still "+((parent&&parent.status)||"a Draft")+". There is no executed contract to vary — edit the quote itself.");
+      return;
+    }
+    const q=blankQuote(parent);openQuote(q);
+  };
   const saveQuote=async data=>{
     if(isDraftRef(data.client?.ref))return;   // never persist an unnumbered draft
     // No invoice number is minted here. Invoicing belongs to QuickBooks — Accounts raises the
