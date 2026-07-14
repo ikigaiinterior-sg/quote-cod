@@ -505,7 +505,9 @@ const saveVersions=v=>{
     // Still over the cap: drop signature images from the local copy as a last resort.
     // The cloud record keeps them; only the offline cache is stripped.
     try{
-      const stripped=lean.map(q=>({...q,sig:q.sig?{...q.sig,summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",idCanvas:"",directorCanvas:"",clientCanvas:"",client2Canvas:""}:q.sig}));
+      // _stripped marks this copy as LOSSY. cloudPush refuses to write it back, so a
+      // signed contract can never lose its signatures by round-tripping through the cache.
+      const stripped=lean.map(q=>({...q,_stripped:true,sig:q.sig?{...q.sig,summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",idCanvas:"",directorCanvas:"",clientCanvas:"",client2Canvas:""}:q.sig}));
       localStorage.setItem(STORAGE_KEY,JSON.stringify(stripped));
     }catch(e2){console.warn("localStorage full — running from cloud only.",e2);}
   }
@@ -523,31 +525,48 @@ const cloudPull=async()=>{
   const ids=new Set(CLOUD.map(q=>q.id));
   const orphans=local.filter(q=>!ids.has(q.id));
   if(orphans.length){
-    await sb.from("quotes").upsert(orphans.map(q=>({id:q.id,ref:q.client?.ref||null,payload:q})));
-    CLOUD=[...orphans,...CLOUD];
+    // never re-upload a lossy cached copy — it would wipe signatures in the cloud
+    const safe=orphans.filter(q=>!q._stripped);
+    if(safe.length){
+      try{await sb.from("quotes").upsert(safe.map(q=>({id:q.id,ref:q.client?.ref||null,payload:q})));}
+      catch(e){console.warn("orphan upsert skipped",e);}
+      CLOUD=[...safe,...CLOUD];
+    }
   }
   // Auto-purge: anything sitting in Trash beyond the retention window is destroyed on load.
   // (A web app cannot self-trigger, so the purge happens the next time anyone opens it —
   //  the retention window is therefore a floor, not an exact expiry. That is acceptable.)
   const expired=CLOUD.filter(q=>q.deletedAt&&(Date.now()-q.deletedAt)>TRASH_DAYS*864e5);
   if(expired.length){
-    await sb.from("quotes").delete().in("id",expired.map(q=>q.id));
+    try{await sb.from("quotes").delete().in("id",expired.map(q=>q.id));}
+    catch(e){console.warn("auto-purge skipped",e);}
     const gone=new Set(expired.map(q=>q.id));
     CLOUD=CLOUD.filter(q=>!gone.has(q.id));
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(CLOUD));
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify(CLOUD.filter(q=>!q.deletedAt)));}catch(e){console.warn("local cache write skipped (quota)",e);}
   }
   CLOUD_READY=true;return CLOUD;
 };
 let CLOUD_FAIL=false;
 const setCloudFail=v=>{CLOUD_FAIL=v;try{window.dispatchEvent(new CustomEvent("cloudstate",{detail:v}));}catch{}};
 const cloudPush=async q=>{
+  if(q&&q._stripped){
+    console.error("refusing to push a stripped record",q.id);
+    setCloudFail(true);
+    return false;   // this record lost its signatures to the local cache — never write it back
+  }
   try{
     const{error}=await sb.from("quotes").upsert({id:q.id,ref:q.client?.ref||null,payload:q});
     if(error){console.error("cloudPush failed",error);setCloudFail(true);return false;}
     setCloudFail(false);return true;
   }catch(e){console.error("cloudPush threw",e);setCloudFail(true);return false;}
 };
-const cloudDelete=async id=>{await sb.from("quotes").delete().eq("id",id);};
+const cloudDelete=async id=>{
+  try{
+    const{error}=await sb.from("quotes").delete().eq("id",id);
+    if(error){console.error("cloudDelete failed",error);setCloudFail(true);return false;}
+    return true;
+  }catch(e){console.error("cloudDelete threw",e);setCloudFail(true);return false;}
+};
 const loadTrades=()=>{
   try{
     const ov=JSON.parse(localStorage.getItem(RATECARD_KEY)||"null");
@@ -566,7 +585,20 @@ const saveTradeOverride=(id,fields)=>{
 // Pure recompute of a saved quote's total — used to snapshot the parent value onto a VO.
 const calcQuoteTotal=q=>{
   if(!q)return 0;
-  const TR=loadTrades();
+  // A Variation Order is priced from its freehand tables, not the trade grid.
+  if(q.isVO){
+    const e0=ENTITIES.find(x=>x.id===(q.entity||"ikigai"))||ENTITIES[0];
+    const add=(q.voAdds||[]).reduce((a,l)=>a+(parseFloat(l.qty)||0)*(parseFloat(l.rate)||0),0);
+    const om=(q.voOmits||[]).reduce((a,l)=>a+(parseFloat(l.qty)||0)*(parseFloat(l.rate)||0),0);
+    const net=add-om;
+    return e0.gst?net*1.09:net;
+  }
+  // A Sent/Signed quote carries a frozen rate card. Overlay it so the quote is valued
+  // at the rates it was ISSUED at — never at rates that changed after the client got it.
+  const liveTR=loadTrades();
+  const TR=(q.snapshot&&q.snapshot.items)
+    ? liveTR.map(t=>({...t,items:t.items.map(i=>{const sn=q.snapshot.items[i.id];return sn?{...i,desc:sn.desc,price:sn.price,unit:sn.unit}:i;})}))
+    : liveTR;
   const ent=ENTITIES.find(e=>e.id===(q.entity||"ikigai"))||ENTITIES[0];
   const on=id=>q.itemOn&&q.itemOn[id]===true;
   const qty=id=>parseFloat((q.qtys||{})[id])||0;
@@ -584,10 +616,14 @@ const calcQuoteTotal=q=>{
   });
   TR.forEach(t=>{
     t.items.forEach(i=>{if(on(i.id)&&okPoa(i.id))sum+=qty(i.id)*ep(i);});
-    (q.dupes||[]).filter(d=>d.tradeId===t.id).forEach(d=>{if(on(d.id)&&okPoa(d.id))sum+=qty(d.id)*d.price;});
+    (q.dupes||[]).filter(d=>d.tradeId===t.id).forEach(d=>{
+      if(!on(d.id)||!okPoa(d.id))return;
+      const src=t.items.find(i=>i.id===d.srcId);
+      sum+=qty(d.id)*(src?ep({...src,id:d.id}):d.price);   // re-price from source, like the live engine
+    });
     (q.customs||[]).filter(c=>c.tradeId===t.id&&c.approved).forEach(c=>{if(on(c.id))sum+=(parseFloat((q.qtys||{})[c.id])||1)*c.price;});
   });
-  const d=(q.discOk?(parseFloat(q.disc)||0):0);
+  const d=(q.discOk?Math.min(Math.max(parseFloat(q.disc)||0,0),sum):0);
   const after=sum-d;
   return ent.gst?after*1.09:after;
 };
@@ -637,7 +673,7 @@ function CBtn({open,onClick,size=20}){
 }
 
 // ── SIGNATURE CANVAS ──────────────────────────────────────────────────────────
-function SigCanvas({value,onChange,label,locked}){
+function SigCanvas({value,onChange,label,locked,onLockedClick}){
   const ref=useRef(null);
   const drawing=useRef(false);
   const lastPos=useRef(null);
@@ -688,9 +724,15 @@ function SigCanvas({value,onChange,label,locked}){
       {label&&<div style={{fontSize:9,letterSpacing:1.5,color:C.stone,marginBottom:4,fontFamily:T.sans}}>{label}</div>}
       <div style={{position:"relative",border:`1px dashed ${C.gold}`,borderRadius:3,background:"#FEFCF8",overflow:"hidden"}}>
         <canvas ref={ref} width={340} height={80}
-          style={{display:"block",width:"100%",height:80,cursor:locked?"not-allowed":"crosshair",touchAction:"none"}}
+          style={{display:"block",width:"100%",height:80,cursor:locked?(onLockedClick?"pointer":"not-allowed"):"crosshair",touchAction:"none"}}
           onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
           onTouchStart={start} onTouchMove={move} onTouchEnd={end}/>
+        {locked&&onLockedClick&&<div className="no-print" onClick={onLockedClick}
+          style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",
+                  background:"rgba(42,31,20,0.06)",cursor:"pointer",fontFamily:T.sans,fontSize:10,
+                  letterSpacing:1.5,color:C.stone,fontWeight:600}}>
+          🔒 DIRECTOR PIN REQUIRED — CLICK TO UNLOCK
+        </div>}
         {!locked&&<button className="no-print" onClick={clear} style={{position:"absolute",top:4,right:4,background:"transparent",border:`1px solid ${C.border}`,borderRadius:2,padding:"2px 6px",fontSize:9,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Clear</button>}
       </div>
     </div>
@@ -938,8 +980,11 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
     const typed=window.prompt(`Type the reference to confirm permanent deletion:\n${ref}`);
     if(typed===null)return;
     if(typed.trim()!==ref){alert("Reference did not match. Nothing was deleted.");return;}
-    const v=versions.filter(x=>x.id!==q.id);
-    setVersions(v);saveVersions(v);cloudDelete(q.id);
+    const kidIds=new Set(versions.filter(x=>x.parentId===q.id).map(x=>x.id));
+    const v=versions.filter(x=>x.id!==q.id&&!kidIds.has(x.id));
+    setVersions(v);saveVersions(v);
+    cloudDelete(q.id);
+    kidIds.forEach(id=>cloudDelete(id));   // VOs go with the parent — no orphan rows in Supabase
   };
 
   const voBusy=useRef(false);
@@ -1139,21 +1184,56 @@ function AdminPanel({onBack}){
     reader.onload=ev=>{
       try{
         const text=ev.target.result;
-        const rows=text.split("\n").map(r=>r.split(",").map(c=>c.trim().replace(/^"|"$/g,"")));
+        // A naive split(",") destroyed every row whose description contained a comma —
+        // the price column landed on a fragment of the text and parseFloat()||0 wrote $0.
+        // This is a proper RFC-4180 parser: quoted fields may contain commas and newlines.
+        const parseCsv=t=>{
+          const out=[];let row=[],cell="",q=false;
+          for(let i=0;i<t.length;i++){
+            const ch=t[i];
+            if(q){
+              if(ch==='"'&&t[i+1]==='"'){cell+='"';i++;}
+              else if(ch==='"')q=false;
+              else cell+=ch;
+            }else{
+              if(ch==='"')q=true;
+              else if(ch===","){row.push(cell);cell="";}
+              else if(ch==="\n"||ch==="\r"){
+                if(ch==="\r"&&t[i+1]==="\n")i++;
+                row.push(cell);out.push(row);row=[];cell="";
+              }else cell+=ch;
+            }
+          }
+          if(cell!==""||row.length){row.push(cell);out.push(row);}
+          return out.filter(r=>r.some(c=>c.trim()!==""));
+        };
+        const rows=parseCsv(text).map(r=>r.map(c=>c.trim()));
         const header=rows[0].map(h=>h.toLowerCase());
         const idIdx=header.indexOf("id"),descIdx=header.indexOf("desc"),priceIdx=header.indexOf("price"),unitIdx=header.indexOf("unit");
         if(idIdx<0||descIdx<0||priceIdx<0)throw new Error("CSV must have columns: id, desc, price, unit");
-        let count=0;
-        rows.slice(1).forEach(row=>{
-          if(!row[idIdx])return;
+        // Validate EVERYTHING before writing anything. A bad price must never become $0 silently.
+        const staged=[],bad=[];
+        rows.slice(1).forEach((row,i)=>{
+          const id=row[idIdx];
+          if(!id)return;
           const fields={};
           if(descIdx>=0&&row[descIdx])fields.desc=row[descIdx];
-          if(priceIdx>=0&&row[priceIdx])fields.price=parseFloat(row[priceIdx])||0;
           if(unitIdx>=0&&row[unitIdx])fields.unit=row[unitIdx];
-          saveTradeOverride(row[idIdx],fields);count++;
+          if(priceIdx>=0&&row[priceIdx]!==undefined&&row[priceIdx]!==""){
+            const raw=row[priceIdx].replace(/[$,]/g,"");
+            const p=Number(raw);
+            if(!isFinite(p)||p<0){bad.push(`row ${i+2} (${id}): price "${row[priceIdx]}"`);return;}
+            fields.price=p;
+          }
+          staged.push([id,fields]);
         });
+        if(bad.length)throw new Error(`${bad.length} bad price(s) — NOTHING was imported:\n${bad.slice(0,6).join("\n")}`);
+        const zeros=staged.filter(([,f])=>f.price===0).length;
+        const msg=`Import ${staged.length} item(s) into the rate card?`+(zeros?`\n\n⚠️ ${zeros} item(s) would be set to $0.00.`:"");
+        if(!window.confirm(msg)){setCsvMsg("Import cancelled — nothing changed.");return;}
+        staged.forEach(([id,fields])=>saveTradeOverride(id,fields));
         setTrades(loadTrades());
-        setCsvMsg(`✓ ${count} items updated from CSV`);
+        setCsvMsg(`✓ ${staged.length} items updated from CSV`);
       }catch(err){setCsvMsg("✕ Error: "+err.message);}
     };
     reader.readAsText(f);
@@ -1235,14 +1315,42 @@ function AdminPanel({onBack}){
 
 // ── QUOTE BUILDER ─────────────────────────────────────────────────────────────
 function QuoteBuilder({initData,onSave,onBack}){
-  const TRADES=useMemo(()=>loadTrades(),[]);
+  const[snapshot,setSnapshot]=useState(initData.snapshot||null);
+  // The rate card as it stood when this quote was ISSUED. Overlaid on top of the live card
+  // so every code path — totals, print rows, the quote list — reads the frozen values with
+  // no further change. Draft = live rates. Sent/Signed = frozen.
+  const TRADES=useMemo(()=>{
+    const live=loadTrades();
+    if(!snapshot||!snapshot.items)return live;
+    return live.map(t=>({...t,items:t.items.map(i=>{
+      const sn=snapshot.items[i.id];
+      return sn?{...i,desc:sn.desc,price:sn.price,unit:sn.unit}:i;
+    })}));
+  },[snapshot]);
+  // Build the snapshot from the CURRENT rate card. Called at the moment a quote is Sent.
+  const buildSnapshot=()=>{
+    const live=loadTrades();
+    const items={};
+    live.forEach(t=>t.items.forEach(i=>{items[i.id]={desc:i.desc,price:i.price,unit:i.unit};}));
+    return{items,designPsf:DESIGN_PSF_RATE,at:Date.now()};
+  };
+  // Has the rate card moved since this quote was issued?
+  const ratesMoved=useMemo(()=>{
+    if(!snapshot||!snapshot.items)return false;
+    const live=loadTrades();
+    return live.some(t=>t.items.some(i=>{
+      const sn=snapshot.items[i.id];
+      return sn&&(sn.price!==i.price||sn.desc!==i.desc||sn.unit!==i.unit);
+    }));
+  },[snapshot]);
   const[step,setStep]=useState("quote");
   const[tab,setTab]=useState("summary");
   const[quoteName,setQuoteName]=useState(initData.name||"New Quote");
   const[projectName,setProjectName]=useState(initData.projectName||"");
   const isVO=initData.isVO||false;
   const voNumber=initData.voNumber||0;
-  const[entity,setEntity]=useState(initData.entity||"ikigai");
+  const[entity,setEntityRaw]=useState(initData.entity||"ikigai");
+  const setEntity=(...a)=>{markRevised();setEntityRaw(...a);};
   const ent=ENTITIES.find(e=>e.id===entity);
   const[client,setClient]=useState(initData.client||{name:"",address:"",email:"",email2:"",phone:"",ref:genRef(),date:todayStr()});
   const[idStaff,setIdStaff]=useState(initData.idStaff||(SESSION?SESSION.name:""));
@@ -1255,26 +1363,39 @@ function QuoteBuilder({initData,onSave,onBack}){
   const setDesignOn=(...a)=>{markRevised();setDesignOnRaw(...a);};
   const[qtys,setQtysRaw]=useState(initData.qtys||{});
   const setQtys=(...a)=>{markRevised();setQtysRaw(...a);};
-  const[itemOn,setItemOn]=useState(initData.itemOn||{});
-  const[tiers,setTiers]=useState(initData.tiers||{});
-  const[notes,setNotes]=useState(initData.notes||{});
+  const[itemOn,setItemOnRaw]=useState(initData.itemOn||{});
+  const setItemOn=(...a)=>{markRevised();setItemOnRaw(...a);};
+  const[tiers,setTiersRaw]=useState(initData.tiers||{});
+  const setTiers=(...a)=>{markRevised();setTiersRaw(...a);};
+  const[notes,setNotesRaw]=useState(initData.notes||{});
+  const setNotes=(...a)=>{markRevised();setNotesRaw(...a);};
   const[imgs,setImgs]=useState({});
-  const[zoneOverride,setZoneOverride]=useState(initData.zoneOverride||{});
-  const[dupes,setDupes]=useState(initData.dupes||[]);
+  const[zoneOverride,setZoneOverrideRaw]=useState(initData.zoneOverride||{});
+  const setZoneOverride=(...a)=>{markRevised();setZoneOverrideRaw(...a);};
+  const[dupes,setDupesRaw]=useState(initData.dupes||[]);
+  const setDupes=(...a)=>{markRevised();setDupesRaw(...a);};
   const[openTrades,setOpenTrades]=useState(initData.openTrades||{1:true});
   const[openZones,setOpenZones]=useState(initData.openZones||{});
-  const[payKey,setPayKey]=useState(initData.payKey||"standard");
-  const[customPay,setCustomPay]=useState(initData.customPay||[]);
+  const[payKey,setPayKeyRaw]=useState(initData.payKey||"standard");
+  const setPayKey=(...a)=>{markRevised();setPayKeyRaw(...a);};
+  const[customPay,setCustomPayRaw]=useState(initData.customPay||[]);
+  const setCustomPay=(...a)=>{markRevised();setCustomPayRaw(...a);};
   const[showCPay,setShowCPay]=useState(false);
-  const[disc,setDisc]=useState(initData.disc||"");
-  const[discOk,setDiscOk]=useState(initData.discOk||false);
+  const[disc,setDiscRaw]=useState(initData.disc||"");
+  const setDisc=(...a)=>{markRevised();setDiscRaw(...a);};
+  const[discOk,setDiscOkRaw]=useState(initData.discOk||false);
+  const setDiscOk=(...a)=>{markRevised();setDiscOkRaw(...a);};
   const[usePaypal,setUsePaypal]=useState(initData.usePaypal||false);
   const[usePaynow,setUsePaynow]=useState(initData.usePaynow||false);
-  const[customs,setCustoms]=useState(initData.customs||[]);
-  const[removalOn,setRemovalOn]=useState(initData.removalOn||{});
+  const[customs,setCustomsRaw]=useState(initData.customs||[]);
+  const setCustoms=(...a)=>{markRevised();setCustomsRaw(...a);};
+  const[removalOn,setRemovalOnRaw]=useState(initData.removalOn||{});
+  const setRemovalOn=(...a)=>{markRevised();setRemovalOnRaw(...a);};
   // ── VO STATE — freehand additions & omissions. Parent is never touched.
-  const[voAdds,setVoAdds]=useState(initData.voAdds||[]);
-  const[voOmits,setVoOmits]=useState(initData.voOmits||[]);
+  const[voAdds,setVoAddsRaw]=useState(initData.voAdds||[]);
+  const setVoAdds=(...a)=>{markRevised();setVoAddsRaw(...a);};
+  const[voOmits,setVoOmitsRaw]=useState(initData.voOmits||[]);
+  const setVoOmits=(...a)=>{markRevised();setVoOmitsRaw(...a);};
   const[voApproved,setVoApproved]=useState(initData.voApproved||false);
   const[voPinBuf,setVoPinBuf]=useState("");
   const[showVoPin,setShowVoPin]=useState(false);
@@ -1379,12 +1500,30 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Any change reverts it to Draft and flags it for re-issue, so the status can never lie.
   const[revised,setRevised]=useState(initData.revised||false);
   const sentRef=useRef(status);
+  const hasInkRef=useRef(v=>typeof v==="string"&&v.length>200);
   useEffect(()=>{sentRef.current=status;},[status]);
   const markRevised=useCallback(()=>{
-    if(sentRef.current==="Sent"){setStatus("Draft");setRevised(true);}
+    if(sentRef.current==="Sent"){setStatus("Draft");setRevised(true);setSnapshot(null);}
+    // A signature is only valid against the content it was given for. If the content
+    // changes, every signature on this quote is void — all parties must sign again.
+    setSig(sg=>{
+      const inked=hasInkRef.current(sg.idCanvas)||hasInkRef.current(sg.directorCanvas)||hasInkRef.current(sg.clientCanvas)||sg.agreed||(sg.clientName||"").trim();
+      if(!inked)return sg;
+      setSigWiped(true);
+      return {...sg,idCanvas:"",directorCanvas:"",clientCanvas:"",clientName:"",agreed:false,
+              allItemsCanvas:"",summaryCanvas:"",tcCanvas:"",warrantyCanvas:""};
+    });
   },[]);
+  const[sigWiped,setSigWiped]=useState(false);
+  const[dirUnlocked,setDirUnlocked]=useState(USER_ROLE>=ROLES.director);
   const gst=ent.gst;
   const isOn=id=>itemOn[id]===true;
+  // A duplicate must re-price when the finish tier changes. Freezing the price at
+  // duplication silently under-charged every copied carpentry line.
+  const dupePrice=d=>{
+    const src=TRADES.find(t=>t.id===d.tradeId)?.items.find(i=>i.id===d.srcId);
+    return src?getEP({...src,id:d.id}):d.price;
+  };
   const getZone=item=>zoneOverride[item.id]||item.zone||"Whole House";
   const getTier=id=>tiers[id]||"base";
   const getEP=item=>{const manual=poaPrices[item.id];if(manual!==undefined&&manual!==null&&manual!=="")return parseFloat(manual)||0;const t=getTier(item.id);if(!item.carpentry||t==="base")return item.price;return Math.round(item.price*FINISH[t].mult*100)/100;};
@@ -1410,13 +1549,14 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,poaApproved,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,poaApproved,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,snapshot]);
 
   const buildSaveData=()=>({
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
     isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,revised,
-    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved
+    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved,
+    snapshot
   });
   const[issuing,setIssuing]=useState(false);
   // Everything autosaves as you type. Save exists for ONE thing that autosave cannot do:
@@ -1429,6 +1569,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   // canvas satisfied the check, and a Director PIN could force Signed on a blank document —
   // so "Signed" did not mean signed. All three parties are now mandatory.
   const hasInk=v=>typeof v==="string"&&v.length>200;   // an empty canvas still serialises to a short data-URL
+  hasInkRef.current=hasInk;
   const execChecks=[
     {key:"idCanvas",       label:"Designer signature",   ok:hasInk(sig.idCanvas)},
     {key:"directorCanvas", label:"Director signature",   ok:hasInk(sig.directorCanvas)},
@@ -1436,6 +1577,16 @@ function QuoteBuilder({initData,onSave,onBack}){
     {key:"clientName",     label:"Client name",          ok:!!(sig.clientName||"").trim()},
     {key:"agreed",         label:"Client acceptance",    ok:!!sig.agreed}
   ];
+  // Items toggled ON but awaiting approval are excluded from BOTH the total and the
+  // printed line items — they vanish with no warning. Count them and block issue.
+  const pendingItems=useMemo(()=>{
+    const ids=[];
+    TRADES.forEach(t=>t.items.forEach(i=>{if(isOn(i.id)&&poaNeedsApproval(i.id))ids.push(i.desc);}));
+    dupes.forEach(d=>{if(isOn(d.id)&&poaNeedsApproval(d.id))ids.push(d.desc);});
+    customs.forEach(c=>{if(!c.approved&&isOn(c.id))ids.push(c.desc);});
+    return ids;
+  },[itemOn,poaPrices,poaApproved,dupes,customs]);
+  const hasPending=pendingItems.length>0;
   const payValid=payKey!=="custom"||Math.abs(cpTotal-100)<0.01;
   const canExecute=execChecks.every(c=>c.ok)&&payValid;
   // A payment tick asserts money changed hands. Director PIN only.
@@ -1448,6 +1599,8 @@ function QuoteBuilder({initData,onSave,onBack}){
     setSig(s=>({...s,[key]:true}));
   };
   const executeContract=async()=>{
+    if(isVO&&!voApproved){alert("Cannot execute — this Variation Order has not been approved by a Director.");return;}
+    if(hasPending){alert(`Cannot execute — ${pendingItems.length} item(s) are still awaiting approval and are excluded from the total.`);return;}
     if(!payValid){alert(`Cannot execute — the custom payment schedule totals ${cpTotal}%, not 100%.\n\nFix the stages before executing.`);return;}
     if(!canExecute){alert("Cannot execute — the contract is not fully signed.");return;}
     if(!window.confirm(
@@ -1573,7 +1726,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const tradeSubs=useMemo(()=>TRADES.map(t=>{
     // Unapproved POA lines are pending — excluded from totals until a senior/director approves.
     const base=t.items.reduce((s,i)=>isOn(i.id)&&!poaNeedsApproval(i.id)?s+(parseFloat(qtys[i.id])||0)*getEP(i):s,0);
-    const dp=dupes.filter(d=>d.tradeId===t.id).reduce((s,d)=>isOn(d.id)&&!poaNeedsApproval(d.id)?s+(parseFloat(qtys[d.id])||0)*d.price:s,0);
+    const dp=dupes.filter(d=>d.tradeId===t.id).reduce((s,d)=>isOn(d.id)&&!poaNeedsApproval(d.id)?s+(parseFloat(qtys[d.id])||0)*dupePrice(d):s,0);
     const cu=t.id===1?0:customs.filter(c=>c.tradeId===t.id&&c.approved).reduce((s,c)=>isOn(c.id)?s+(parseFloat(qtys[c.id])||1)*c.price:s,0);
     const removal=isVO?t.items.reduce((s,i)=>removalOn[i.id]&&isOn(i.id)?s-((parseFloat(qtys[i.id])||0)*getEP(i)):s,0):0;
     return{id:t.id,code:t.code,name:t.name,sub:base+dp+cu+removal};
@@ -1607,7 +1760,7 @@ function QuoteBuilder({initData,onSave,onBack}){
     if(!customForm?.desc||!customForm?.price)return;
     const id=`c${Date.now()}${Math.random().toString(36).slice(2,6)}`;
     const capDesc=customForm.desc.charAt(0).toUpperCase()+customForm.desc.slice(1);
-    setCustoms(c=>[...c,{id,tradeId:customForm.tradeId,zone:customForm.zone||"Whole House",desc:capDesc,unit:customForm.unit||"LS",price:parseFloat(customForm.price)||0,approved:false}]);
+    setCustoms(c=>[...c,{id,tradeId:customForm.tradeId,zone:customForm.zone||"Whole House",desc:capDesc,unit:customForm.unit||"LS",price:Math.max(parseFloat(customForm.price)||0,0),approved:false}]);
     setCustomForm(null);
   };
 
@@ -1640,6 +1793,14 @@ function QuoteBuilder({initData,onSave,onBack}){
     return [ref,who,proj].filter(Boolean).join("_");
   };
   const runPrint=scope=>{
+    if(isVO&&!voApproved){
+      alert("⚠️ CANNOT PRINT — this Variation Order has not been approved by a Director.\n\nAn unapproved VO must not leave the office.");
+      return;
+    }
+    if(hasPending){
+      alert(`⚠️ CANNOT PRINT — ${pendingItems.length} item(s) are awaiting approval and would be SILENTLY LEFT OUT of this quote:\n\n• ${pendingItems.slice(0,8).join("\n• ")}${pendingItems.length>8?"\n• …":""}\n\nGet them approved, or switch them off, before issuing.`);
+      return;
+    }
     printScopeRef.current=scope;
     const prevTitle=document.title;
     document.title=pdfName();
@@ -1675,6 +1836,21 @@ function QuoteBuilder({initData,onSave,onBack}){
   return(
     <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh",color:C.ink}}>
       {/* TOPBAR */}
+      {ratesMoved&&status!=="Signed"&&<div className="no-print" style={{background:"#4A3A24",color:"#F0E6D2",padding:"9px 16px",fontFamily:T.sans,fontSize:12,textAlign:"center",letterSpacing:0.2}}>
+        ⚠️ The rate card has changed since this quote was sent. It is still priced at the rates the client received.
+        <span onClick={()=>{
+          if(!window.confirm("Update this quote to CURRENT rates?\n\nIt will return to Draft and must be re-issued to the client.\n\nCancel to keep honouring the rates the client already has."))return;
+          setSnapshot(null);setStatus("Draft");setRevised(true);
+        }} style={{marginLeft:12,cursor:"pointer",textDecoration:"underline",color:C.gold,fontWeight:600}}>Update to current rates</span>
+        <span style={{marginLeft:14,opacity:0.75}}>or do nothing to keep the sent rates.</span>
+      </div>}
+      {sigWiped&&<div className="no-print" style={{background:"#8A5A00",color:"#fff",padding:"9px 16px",fontFamily:T.sans,fontSize:12,fontWeight:600,textAlign:"center"}}>
+        ⚠️ SIGNATURES VOIDED — this quote was changed after it was signed. All parties must sign again before it can be executed.
+        <span onClick={()=>setSigWiped(false)} style={{marginLeft:12,cursor:"pointer",textDecoration:"underline"}}>Dismiss</span>
+      </div>}
+      {hasPending&&<div className="no-print" style={{background:"#B3261E",color:"#fff",padding:"9px 16px",fontFamily:T.sans,fontSize:12,fontWeight:600,textAlign:"center",letterSpacing:0.2}}>
+        ⚠️ {pendingItems.length} item{pendingItems.length>1?"s":""} awaiting approval — EXCLUDED from the total and will NOT appear on the quote. Approve or switch off before issuing.
+      </div>}
       <div className="no-print codstudio-topbar" style={{background:C.ink,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6,position:"sticky",top:0,zIndex:100}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <button onClick={()=>{handleSave();onBack();}} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>← All</button>
@@ -1712,8 +1888,9 @@ function QuoteBuilder({initData,onSave,onBack}){
               if(st==="Sent"){
                 if(isVO&&!voApproved){alert("This Variation Order must be approved by a Director before it can be sent.");return;}
                 if(!window.confirm(revised
-                  ? "Re-issue as Sent?\n\nThis quote was revised after it was last sent. Make sure the client receives the updated document."
-                  : "Mark as Sent?\n\nThe quote stays editable — any further change will return it to Draft for re-issue."))return;
+                  ? "Re-issue as Sent?\n\nThis quote was revised after it was last sent. Make sure the client receives the updated document.\n\nIts rates will be re-frozen at today's rate card."
+                  : "Mark as Sent?\n\nThe rates on this quote will be FROZEN at today's rate card, so it can never change value under the client.\n\nIt stays editable — any further change returns it to Draft for re-issue."))return;
+                setSnapshot(buildSnapshot());   // freeze the rate card onto the quote
                 setRevised(false);
               }
               if(st==="Signed"){
@@ -1800,7 +1977,7 @@ function QuoteBuilder({initData,onSave,onBack}){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
             <div>
               <label style={sL}>Client Email (Primary)</label>
-              <input value={client.email||""} onChange={e=>setClient(c=>({...c,email:e.target.value}))} disabled={isLocked} title={isLocked?"Locked once Sent":""} placeholder="client@email.com"
+              <input value={client.email||""} onChange={e=>setClient(c=>({...c,email:e.target.value}))} title="Contact details remain editable — a typo here would break every receipt" placeholder="client@email.com"
                 style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"7px 10px",fontSize:12,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
             </div>
             <div>
@@ -1810,10 +1987,10 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
           </div>
           <div style={{fontSize:11,color:C.stone,marginBottom:8,fontFamily:T.sans}}>
-            When sent, this quote will be shared as a read-only link. Auto CC: <strong>{staffMail(idStaff)}</strong> · <strong>admin@ikigaiinterior.com</strong> · <strong>work@ikigaiinterior.com</strong> — sender is locked to your login.
+            This opens a covering email only — <strong>the quotation is NOT attached</strong>. You must attach it yourself: Full Print / PDF → Save as PDF → attach in Outlook. Auto CC: <strong>{staffMail(idStaff)}</strong> · <strong>admin@ikigaiinterior.com</strong> · <strong>work@ikigaiinterior.com</strong>.
           </div>
           <div style={{display:"flex",gap:8}}>
-            <a href={`mailto:${client.email||""}?cc=${client.email2?client.email2+",":""}${staffMail(idStaff)},${CC_FIXED}&subject=Quotation ${client.ref} — Ikigai Interior&body=Dear ${client.name||""},\n\nPlease find your quotation (Ref: ${client.ref}) enclosed for your review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff}\nIkigai Interior Pte Ltd`}
+            <a href={`mailto:${client.email||""}?cc=${client.email2?client.email2+",":""}${staffMail(idStaff)},${CC_FIXED}&subject=${isVO?"Variation Order":"Quotation"} ${client.ref} — ${ent.label}&body=Dear ${client.name||""},\n\nPlease find your ${isVO?"variation order":"quotation"} (Ref: ${client.ref}) attached for your review.\n\nKindly revert at your earliest convenience.\n\nWarm regards,\n${idStaff}\n${ent.legal}`}
               style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"8px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,textDecoration:"none",display:"inline-block"}}>
               ✉ Open in Mail App
             </a>
@@ -2143,8 +2320,11 @@ function QuoteBuilder({initData,onSave,onBack}){
                         <div style={{textAlign:"right"}}>
                           {c.approved
                             ?<span style={{fontSize:12,fontFamily:T.serif}}>{fmt(c.price)}</span>
-                            :USER_ROLE>=ROLES.director&&!isLocked
-                              ?<Btn ch="Approve" onClick={()=>setCustoms(x=>x.map(y=>y.id===c.id?{...y,approved:true}:y))} bg={C.gold} col={C.ink} sm/>
+                            :!isLocked
+                              ?<Btn ch={USER_ROLE>=ROLES.director?"Approve":"🔒 Approve"} onClick={()=>{
+                                  if(USER_ROLE<ROLES.director&&window.prompt("Director PIN to approve this custom line:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+                                  setCustoms(x=>x.map(y=>y.id===c.id?{...y,approved:true}:y));
+                                }} bg={C.gold} col={C.ink} sm/>
                               :<span style={{fontSize:10,color:C.stone}}>Awaiting director</span>}
                         </div>
                         <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.gold}}>{c.approved&&on?fmt(q*c.price):"—"}</div>
@@ -2497,7 +2677,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 <div style={{fontSize:10,color:C.stone,marginBottom:5,fontFamily:T.sans}}>Date</div>
                 <input value={sig.directorDate||""} onChange={e=>{if(!isFullyLocked)setSig(s=>({...s,directorDate:e.target.value}));}} placeholder={todayStr()} disabled={isFullyLocked}
                   style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 9px",fontSize:12,fontFamily:T.sans,background:isFullyLocked?"#F5F0E8":C.white,marginBottom:10,boxSizing:"border-box"}}/>
-                <SigCanvas label="Director Signature" value={sig.directorCanvas||""} onChange={v=>setSig(s=>({...s,directorCanvas:v}))} locked={isFullyLocked}/>
+                <SigCanvas label="Director Signature" value={sig.directorCanvas||""} onChange={v=>setSig(s=>({...s,directorCanvas:v}))} locked={isFullyLocked||!dirUnlocked} onLockedClick={isFullyLocked?null:()=>{if(window.prompt("Director PIN to sign:")===DIRECTOR_PIN)setDirUnlocked(true);else alert("Incorrect Director PIN.");}}/>
               </div>
             </div>
 
@@ -2558,6 +2738,7 @@ function QuoteBuilder({initData,onSave,onBack}){
         {/* PAYMENT TAB */}
         {tab==="payment"&&(()=>{
           const designPaid=sig.paid_design;
+          const showDesignPre=designSubtotal>0&&!designOnly; // on a design-only quote the fee IS the contract
           const stage1Base=grandTotal*(parseFloat(activePayItems[0]?.pct)||0)/100;
           const stage1Adjusted=designPaid?Math.max(0,stage1Base-designSubtotal):stage1Base;
           return(
@@ -2578,8 +2759,8 @@ function QuoteBuilder({initData,onSave,onBack}){
               {/* Payment schedule table */}
               <div style={{borderTop:"1px solid #3A2E22",paddingTop:12}}>
                 <div style={{fontSize:9,letterSpacing:2,color:C.stone,marginBottom:8,fontFamily:T.sans}}>PAYMENT SCHEDULE — {effPayKey==="custom"?"CUSTOM":(isVO?"VARIATION ORDER — 100% ON COMPLETION":(PAY_PRESETS[effPayKey]?.label||"").toUpperCase())}</div>
-                {/* Design fee pre-stage */}
-                {designSubtotal>0&&(
+                {/* Design fee pre-stage — NOT on a design-only quote, where the fee IS the contract */}
+                {showDesignPre&&(
                   <div style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 36px",gap:8,padding:"8px 0",borderBottom:"1px solid #3A2E22",alignItems:"center"}}>
                     <div style={{fontSize:11,color:C.gold,fontFamily:T.sans,fontWeight:600}}>D</div>
                     <div>
@@ -2598,7 +2779,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                   const isStage1=i===0;
                   const rawAmt=grandTotal*(parseFloat(p.pct)||0)/100;
                   const displayAmt=isStage1&&designPaid?stage1Adjusted:rawAmt;
-                  const note=isStage1&&designSubtotal>0?(designPaid?`(Design fee ${fmt(designSubtotal)} already collected · Balance due)`:`(Design fee ${fmt(designSubtotal)} deductible upon receipt)`):"";
+                  const note=isStage1&&showDesignPre?(designPaid?`(Design fee ${fmt(designSubtotal)} already collected · Balance due)`:`(Design fee ${fmt(designSubtotal)} deductible upon receipt)`):"";
                   return(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"28px 1fr 90px 36px",gap:8,padding:"8px 0",borderBottom:"1px solid #3A2E22",alignItems:"center"}}>
                       <div style={{fontSize:11,color:C.gold,fontFamily:T.sans,fontWeight:600}}>{i+1}</div>
@@ -2840,7 +3021,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             SOR preview tab, which keeps its own separate rate-card print. */}
         {(step!=="preview"||tab!=="sor")&&(<>
         {/* ALL ITEMS — selected items + subtotals */}
-        <div className="print-section" style={{display:(step==="preview"&&tab==="quote")?undefined:"none"}}>
+        {!isVO&&<div className="print-section" style={{display:(step==="preview"&&tab==="quote")?undefined:"none"}}>
           <div style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"16px 20px",marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
               <div>
@@ -2876,7 +3057,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                   amount:(parseFloat(qtys[i.id])||0)*getEP(i)}));
                 const dup=dupes.filter(d=>d.tradeId===trade.id&&isOn(d.id)&&(parseFloat(qtys[d.id])||0)>0&&!poaNeedsApproval(d.id)).map(d=>({
                   id:d.id,desc:d.desc,qty:parseFloat(qtys[d.id])||0,unit:d.unit||"LS",note:notes[d.id]||"",
-                  amount:(parseFloat(qtys[d.id])||0)*d.price}));
+                  amount:(parseFloat(qtys[d.id])||0)*dupePrice(d)}));
                 const cus=customs.filter(c=>c.tradeId===trade.id&&c.approved&&isOn(c.id)).map(c=>({
                   id:c.id,desc:c.desc,qty:parseFloat(qtys[c.id])||1,unit:c.unit||"LS",note:notes[c.id]||"",
                   amount:(parseFloat(qtys[c.id])||1)*c.price}));
@@ -2926,7 +3107,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <SigCanvas label="Client Initials" value={sig.allItemsCanvas||""} onChange={v=>setSig(s=>({...s,allItemsCanvas:v}))} locked={isFullyLocked}/>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* SUMMARY — totals + payment schedule */}
         <div className="print-section summary-doc" style={{display:(step==="preview"&&tab==="summary")?undefined:"none"}}>
@@ -3088,7 +3269,7 @@ function QuoteBuilder({initData,onSave,onBack}){
         </div>
 
         {/* WARRANTY SCHEDULE */}
-        <div className="print-section" style={{display:(!designOnly&&step==="preview"&&tab==="warranty")?undefined:"none",background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
+        {!designOnly&&<div className="print-section" style={{display:(step==="preview"&&tab==="warranty")?undefined:"none",background:C.white,borderRadius:4,border:`1px solid ${C.border}`,padding:"26px 30px"}}>
             <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,marginBottom:6}}>Warranty Schedule</div>
             <div style={{fontSize:12,color:C.stone,marginBottom:16,lineHeight:1.7,fontFamily:T.sans}}>Warranty commences after full handover or stay-in period, whichever is earlier. Covers workmanship & material integrity of contracted scope. Does not apply to misuse, third-party tampering, natural wear and tear, or unauthorised repair works.</div>
             <div style={{borderRadius:3,overflow:"hidden",marginBottom:20}}>
@@ -3104,7 +3285,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
             <SigCanvas label="Client Signature — Warranty Acknowledgement" value={sig.warrantyCanvas} onChange={v=>setSig(s=>({...s,warrantyCanvas:v}))} locked={isFullyLocked}/>
             <div style={{fontSize:9,color:C.stone,marginTop:4,fontFamily:T.sans}}>By signing above, I acknowledge the warranty terms stated. · Ref: {client.ref}</div>
-        </div>
+        </div>}
         </>)}
 
       </div>
@@ -3170,7 +3351,7 @@ function App(){
       if(!s){setDenied(email||"unknown account");setBooted(true);return;}
       SESSION={...s,email};USER_ROLE=s.role;
       setAuthed(true);
-      cloudPull().then(()=>setBooted(true));
+      cloudPull().catch(e=>{console.error("cloudPull failed",e);setCloudFail(true);}).finally(()=>setBooted(true));
     });
   },[]);
   const signOut=async()=>{await sb.auth.signOut();window.location.reload();};
