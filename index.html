@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="CODSTUDIO"/>
+<meta name="theme-color" content="#2A1F14"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxODAiIGhlaWdodD0iMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjM4IiBmaWxsPSIjMkExRjE0Ii8+PHRleHQgeD0iOTAiIHk9IjExNSIgZm9udC1mYW1pbHk9Ikdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iODAiIGZpbGw9IiNDMkE0NkUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+"/>
 <title>CODSTUDIO — Quotation Builder v6.5</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet"/>
@@ -11,7 +17,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:#F8F4EF;font-family:'Quicksand','Helvetica Neue',sans-serif;}
+body{background:#F8F4EF;font-family:'Quicksand','Helvetica Neue',sans-serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
+html{-webkit-text-size-adjust:100%;}   /* stop iOS auto-zooming text */
 input[type="number"]::-webkit-inner-spin-button,input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
 input[type="number"]{-moz-appearance:textfield;}
 input:focus,textarea:focus,select:focus{outline:2px solid #C2A46E;outline-offset:-1px;}
@@ -38,6 +45,37 @@ body.printing .print-section{
   padding:0!important;
 }
 body.printing .print-section:first-of-type{break-before:auto;page-break-before:auto;}
+
+/* ── MOBILE / PHONE LAYOUT ─────────────────────────────────────────────────────
+   The quote tool is a real product now — it must work on a phone. Instead of
+   rewriting ~70 inline flex rows, we constrain the few structural containers here.
+   Everything else already wraps or is single-column.                          */
+@media (max-width:640px){
+  /* the dark header: logo + actions stack, tighter padding */
+  .cs-topbar{padding:14px 16px!important;}
+  .cs-topbar-actions{width:100%;justify-content:flex-start!important;}
+  /* the "+ NEW QUOTE" pill should not overflow the row */
+  .cs-topbar-actions>*{flex:0 0 auto;}
+  /* app shell padding shrinks so cards use the full width */
+  .cs-shell{padding:16px 12px!important;}
+  /* every quote-list card: stack the info and the action buttons vertically */
+  .cs-quote-card{flex-direction:column!important;align-items:stretch!important;gap:10px!important;}
+  .cs-quote-card .cs-card-actions{width:100%;justify-content:flex-start!important;}
+  .cs-card-actions>button{flex:1 1 auto;}   /* Duplicate / Open / × share the row evenly */
+  /* editor: the trade grid scrolls horizontally rather than guillotining the price column */
+  .cs-trade-scroll{overflow-x:auto!important;-webkit-overflow-scrolling:touch;}
+  /* tabs (All Items / Summary / T&C / Warranty / Signature / Payment / SOR) wrap */
+  .cs-tabs{flex-wrap:wrap!important;}
+  /* stop any stray fixed-width children forcing a sideways scroll */
+  .cs-shell input,.cs-shell textarea{max-width:100%;}
+}
+/* Bigger tap targets on touch devices (Apple minimum is 44px) */
+@media (hover:none) and (pointer:coarse){
+  button{min-height:40px;}
+  /* iOS ZOOM FIX: Safari zooms the page whenever a focused field is <16px. Force 16px on
+     touch only, so tapping a field never jerks the layout. Desktop keeps its compact sizes. */
+  input,textarea,select{font-size:16px!important;}
+}
 /* A section header must never be stranded at the foot of a page with nothing under it. */
 body.printing .print-section > div:first-child{break-after:avoid;page-break-after:avoid;}
 
@@ -745,7 +783,7 @@ const ItemRow=React.memo(function ItemRow({
   isOn,qty,ep,tier,zone,img,isLocked,
   onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,
   poaUnlocked,poaEdited,poaVal,onPoaUnlock,onPoaChange,poaNeedsApp,poaApproved,editRate,
-  canReorder,onMoveUp,onMoveDown,onMoveZone,
+  canReorder,onMoveUp,onMoveDown,onMoveZone,onMoveTap,moveZones,
   dragHandlers,dragOver,flash,onDuplicate,
   isVO,isRemoved,onRemove,
 }){
@@ -756,9 +794,11 @@ const ItemRow=React.memo(function ItemRow({
         boxShadow:flash?"inset 0 0 0 2px "+C.gold:"none",transition:"background .6s ease, box-shadow .6s ease",
         opacity:dragOver?0.6:1}}>
       {/* grid: drag | toggle | desc(flex) | qty | unit | price | img | total */}
-      <div style={{display:"grid",gridTemplateColumns:"24px 28px 1fr 58px 48px 80px 78px 80px",gap:2,padding:"7px 10px",alignItems:"start",opacity:isOn?1:0.5}}>
-        <div {...(dragHandlers||{})} style={{color:dragHandlers?.draggable?C.gold:C.border,fontSize:16,textAlign:"center",paddingTop:2,cursor:dragHandlers?.draggable?"grab":"default",userSelect:"none",lineHeight:1,touchAction:"none"}}
-          title={dragHandlers?.draggable?"Drag by these dots to move this line to another zone in this trade":""}>⠿</div>
+      <div className="cs-trade-scroll"><div style={{display:"grid",gridTemplateColumns:"24px 28px minmax(120px,1fr) 58px 48px 80px 78px 80px",gap:2,padding:"7px 10px",alignItems:"start",opacity:isOn?1:0.5,minWidth:560}}>
+        <div {...(dragHandlers||{})}
+          onClick={onMoveTap?()=>onMoveTap(item):undefined}
+          style={{color:dragHandlers?.draggable?C.gold:C.border,fontSize:16,textAlign:"center",paddingTop:2,cursor:onMoveTap?"pointer":(dragHandlers?.draggable?"grab":"default"),userSelect:"none",lineHeight:1,touchAction:"none"}}
+          title={onMoveTap?"Tap to move this line to another zone":(dragHandlers?.draggable?"Drag by these dots to move this line to another zone in this trade":"")}>⠿</div>
         <div style={{display:"flex",justifyContent:"center",paddingTop:2}}>
           <Toggle on={isOn} small disabled={isLocked} onClick={onToggle}/>
         </div>
@@ -865,7 +905,7 @@ const ItemRow=React.memo(function ItemRow({
         </div>
         {/* TOTAL */}
         <div style={{fontFamily:T.serif,fontSize:15,color:isOn&&qty>0?C.ink:C.border,textAlign:"right",paddingTop:4}}>{isOn&&qty>0?fmt(lineT):"—"}</div>
-      </div>
+      </div></div>
     </div>
   );
 });
@@ -1018,12 +1058,12 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
   const vosOf=id=>live.filter(q=>q.parentId===id);
   return(
     <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh"}}>
-      <div style={{background:C.ink,padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div className="cs-topbar" style={{background:C.ink,padding:"18px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
         <div>
           <div style={{fontFamily:T.serif,fontSize:20,fontWeight:300,color:C.gold,letterSpacing:5}}>IKIGAI INTERIOR</div>
           <div style={{fontSize:9,color:C.stone,letterSpacing:3,marginTop:2}}>CODSTUDIO — QUOTATION BUILDER v6.5</div>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div className="cs-topbar-actions" style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:10,color:C.stone,fontFamily:T.sans,marginRight:4}}>{SESSION?SESSION.name:""}</span>
           <button onClick={()=>sb.auth.signOut().then(()=>window.location.reload())} style={{background:"transparent",border:`1px solid ${C.stone}44`,borderRadius:3,padding:"8px 12px",fontSize:10,cursor:"pointer",color:C.stone,fontFamily:T.sans}}>Sign out</button>
           <button onClick={()=>setShowTrash(t=>!t)} style={{background:showTrash?C.stone+"33":"transparent",border:`1px solid ${trashed.length?C.terra:C.stone+"44"}`,borderRadius:3,padding:"8px 14px",fontSize:10,cursor:"pointer",color:trashed.length?C.terra:C.stone,fontFamily:T.sans}}>
@@ -1033,7 +1073,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
           <NewQuoteMenu onNew={onNew}/>
         </div>
       </div>
-      <div style={{maxWidth:920,margin:"0 auto",padding:"28px 20px"}}>
+      <div className="cs-shell" style={{maxWidth:920,margin:"0 auto",padding:"28px 20px"}}>
         {showTrash&&(
           <div style={{background:C.white,border:`1px solid ${C.terra}44`,borderRadius:4,marginBottom:18,overflow:"hidden"}}>
             <div style={{padding:"14px 20px",background:"#FFF8F2",borderBottom:`1px solid ${C.terra}33`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
@@ -1106,7 +1146,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
               const vos=vosOf(q.id);
               return(
                 <div key={q.id}>
-                  <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"16px 20px",display:"flex",alignItems:"center",gap:16}}>
+                  <div className="cs-quote-card" style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:4,padding:"16px 20px",display:"flex",alignItems:"center",gap:16}}>
                     <div style={{flex:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4,flexWrap:"wrap"}}>
                         <span style={{fontFamily:T.serif,fontSize:17,fontWeight:300,color:C.ink}}>{q.name||"Untitled"}</span>
@@ -1121,7 +1161,7 @@ function VersionManager({onOpen,onNew,onAdmin,onNewVO}){
                         <span>Updated {q.updatedAt}</span>
                       </div>
                     </div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <div className="cs-card-actions" style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                       {q.status==="Signed"&&<button onClick={()=>createVO(q)} style={{background:C.terraPale,border:`1px solid ${C.terra}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.terra,fontWeight:600}}>+ VO</button>}
                       <button onClick={()=>dup(q)} style={{background:C.creamD,border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.stone,fontWeight:600}}>Duplicate</button>
                       <button onClick={()=>onOpen(q)} style={{background:C.ink,border:"none",borderRadius:3,padding:"6px 14px",fontSize:11,cursor:"pointer",fontFamily:T.sans,color:C.gold,fontWeight:600}}>Open →</button>
@@ -1878,6 +1918,31 @@ function QuoteBuilder({initData,onSave,onBack}){
         }} style={{marginLeft:12,cursor:"pointer",textDecoration:"underline",color:C.gold,fontWeight:600}}>Update to current rates</span>
         <span style={{marginLeft:14,opacity:0.75}}>or do nothing to keep the sent rates.</span>
       </div>}
+      {movePicker&&(()=>{
+        const trade=TRADES.find(t=>t.id===movePicker.tradeId);
+        const base=trade&&trade.zones?trade.zones:zoneList;
+        const zones=[...base,...extraZones.filter(z=>!base.includes(z))];
+        const theItem=(()=>{
+          const d=dupes.find(x=>x.id===movePicker.id); if(d)return d;
+          for(const t of TRADES){const it=t.items.find(i=>i.id===movePicker.id); if(it)return {...it};}
+          return {id:movePicker.id};
+        })();
+        return(
+        <div className="no-print" onClick={()=>setMovePicker(null)}
+          style={{position:"fixed",inset:0,background:"rgba(42,31,20,0.55)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:C.white,borderRadius:8,padding:"20px 20px 12px",width:"100%",maxWidth:340,boxShadow:"0 12px 40px rgba(0,0,0,0.3)"}}>
+            <div style={{fontFamily:T.serif,fontSize:16,color:C.ink,marginBottom:2}}>Move to zone</div>
+            <div style={{fontSize:11,color:C.stone,marginBottom:14,fontFamily:T.sans}}>Currently in: {movePicker.current||"—"}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:"50vh",overflowY:"auto"}}>
+              {zones.filter(z=>z!==movePicker.current).map(z=>(
+                <button key={z} onClick={()=>moveItemToZone(theItem,z)}
+                  style={{textAlign:"left",background:C.cream,border:`1px solid ${C.border}`,borderRadius:4,padding:"11px 14px",fontSize:13,cursor:"pointer",fontFamily:T.sans,color:C.ink}}>{z}</button>
+              ))}
+            </div>
+            <button onClick={()=>setMovePicker(null)} style={{marginTop:12,width:"100%",background:"transparent",border:"none",padding:"8px",fontSize:12,color:C.stone,cursor:"pointer",fontFamily:T.sans}}>Cancel</button>
+          </div>
+        </div>);
+      })()}
       {sigWiped&&<div className="no-print" style={{background:"#8A5A00",color:"#fff",padding:"9px 16px",fontFamily:T.sans,fontSize:12,fontWeight:600,textAlign:"center"}}>
         ⚠️ SIGNATURES VOIDED — this quote was changed after it was signed. All parties must sign again before it can be executed.
         <span onClick={()=>setSigWiped(false)} style={{marginLeft:12,cursor:"pointer",textDecoration:"underline"}}>Dismiss</span>
@@ -2055,7 +2120,7 @@ function QuoteBuilder({initData,onSave,onBack}){
         </div>
       )}
 
-      <div style={{maxWidth:1160,margin:"0 auto",padding:"16px 14px"}}>
+      <div className="cs-shell" style={{maxWidth:1160,margin:"0 auto",padding:"16px 14px"}}>
       {step==="quote"&&isVO&&(<>
         {/* ══ VO MODE — freehand. Trade grid hidden. Parent untouched. ══ */}
         <div className="no-print" style={{background:C.ink,borderRadius:6,padding:"18px 22px",marginBottom:12}}>
@@ -2479,6 +2544,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                         poaApproved={isPoaApproved(item.id)}
                         editRate={!!trade.editRate}
                         dragHandlers={pointerDragHandlers(item,trade)}
+                        onMoveTap={!trade.noZone&&isOn(item.id)&&!isLocked?(it=>setMovePicker({id:it.id,tradeId:trade.id,current:getZone(it)})):undefined}
                         dragOver={dragId&&dragTarget?.zone===getZone(item)&&dragId!==item.id}
                         isVO={isVO} isRemoved={!!removalOn[item.id]} onRemove={()=>setRemovalOn(r=>({...r,[item.id]:!r[item.id]}))}
                       />;
@@ -2560,6 +2626,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                               poaNeedsApp={poaNeedsApproval(item.id)}
                               poaApproved={isPoaApproved(item.id)}
                               dragHandlers={!item.srcId?pointerDragHandlers(item,trade):pointerDragHandlers(item,trade)}
+                              onMoveTap={!trade.noZone&&isOn(item.id)&&!isLocked?(it=>setMovePicker({id:it.id,tradeId:trade.id,current:getZone(it)})):undefined}
                               dragOver={isDropTarget&&dragId!==item.id}
                               flash={justMoved===item.id}
                               onDuplicate={()=>duplicateLine(item,trade,zone)}
@@ -2651,7 +2718,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
       {/* PREVIEW */}
       {step==="preview"&&(<>
-        <div className="no-print" style={{display:"flex",gap:0,marginBottom:14,borderRadius:3,overflow:"hidden",border:`1px solid ${C.border}`,width:"fit-content",flexWrap:"wrap"}}>
+        <div className="no-print cs-tabs" style={{display:"flex",gap:0,marginBottom:14,borderRadius:3,overflow:"hidden",border:`1px solid ${C.border}`,width:"fit-content",flexWrap:"wrap"}}>
           {(isVO?[["summary","Variation Order"],["tc","T & C"],["warranty","Warranty"],["sign","Signature"],["payment","Payment"]]:[["quote","All Items"],["summary","Summary"],["tc","T & C"],...(designOnly?[]:[["warranty","Warranty"]]),["sign","Signature"],["payment","Payment"],["sor","SOR"]]).map(([k,lbl])=>(
             <button key={k} onClick={()=>setTab(k)} style={{background:tab===k?C.ink:C.white,color:tab===k?C.gold:C.stone,border:"none",padding:"9px 16px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,borderRight:`1px solid ${C.border}`}}>{lbl}</button>
           ))}
