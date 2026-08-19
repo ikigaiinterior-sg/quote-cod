@@ -783,7 +783,7 @@ function SigCanvas({value,onChange,label,locked,onLockedClick}){
 const ItemRow=React.memo(function ItemRow({
   item,tradeId,isDupe,isCustom,customObj,
   isOn,qty,ep,tier,zone,img,isLocked,
-  onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,
+  onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,onEditCustom,onUnlockCustom,
   poaUnlocked,poaEdited,poaVal,onPoaUnlock,onPoaChange,poaNeedsApp,poaApproved,editRate,
   canReorder,onMoveUp,onMoveDown,onMoveZone,onMoveTap,moveZones,
   dragHandlers,dragOver,flash,onDuplicate,
@@ -811,6 +811,8 @@ const ItemRow=React.memo(function ItemRow({
             {isDupe&&<span title="Duplicated line" style={{color:C.gold,fontSize:11,marginRight:4,opacity:0.7}}>⧉</span>}
             {isCustom&&<span style={{background:C.terraPale,color:C.terra,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>CUSTOM</span>}
             {isCustom&&customObj&&!customObj.approved&&<span style={{background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>PENDING</span>}
+            {isCustom&&customObj&&!customObj.approved&&!isLocked&&onEditCustom&&<span onClick={()=>onEditCustom(customObj)} title="Edit while Pending" style={{fontSize:10,color:C.gold,cursor:"pointer",marginRight:4,opacity:0.75}}>✎</span>}
+            {isCustom&&customObj&&customObj.approved&&!isLocked&&USER_ROLE>=ROLES.director&&onUnlockCustom&&<span onClick={()=>onUnlockCustom(customObj)} title="Director PIN unlock" style={{fontSize:10,color:C.stone,cursor:"pointer",marginRight:4}}>🔓</span>}
             {isRemoved&&<span style={{background:"#8B3A3A22",color:"#8B3A3A",border:"1px solid #8B3A3A44",borderRadius:2,padding:"0 5px",fontSize:9,fontWeight:700,marginLeft:4}}>REMOVED</span>}
             {item.desc}
           </div>
@@ -1499,7 +1501,22 @@ function QuoteBuilder({initData,onSave,onBack}){
   // zoneList = default zones + any custom-added zones (for dropdowns & iteration)
   const zoneList=useMemo(()=>{const base=PTC.zones;return[...base,...extraZones.filter(z=>!base.includes(z))];},[extraZones,projectType]);
   const zoneLabel=(tid,z)=>zoneNames[`${tid}-${z}`]||z;
-  const addZone=(tid)=>{const name=window.prompt("New zone name:");if(!name||!name.trim())return;const nm=name.trim();setExtraZones(list=>list.includes(nm)?list:[...list,nm]);setShownZones(s=>({...s,[`${tid}-${nm}`]:true}));setOpenZones(o=>({...o,[`${tid}-${nm}`]:true}));};
+  const[addZoneFor,setAddZoneFor]=useState(null);// tradeId currently showing the inline "new zone" field, or null
+  const[addZoneBuf,setAddZoneBuf]=useState("");
+  // window.prompt() was suppressed on mobile browsers — the button did nothing on phone.
+  // A zone is now a QUOTE-LEVEL concept: adding it from any trade makes it available on
+  // EVERY zone-capable trade immediately (shownZones set for all of ADDZONE_OK, not just tid),
+  // instead of only appearing in the trade it happened to be added from.
+  const commitAddZone=tid=>{
+    const raw=addZoneBuf.trim();
+    if(!raw){setAddZoneFor(null);return;}
+    const existing=zoneList.find(z=>z.toLowerCase()===raw.toLowerCase());
+    const nm=existing||raw;
+    if(!existing)setExtraZones(list=>list.includes(nm)?list:[...list,nm]);
+    setShownZones(s=>{const n={...s};ADDZONE_OK.forEach(t=>{n[`${t}-${nm}`]=true;});return n;});
+    setOpenZones(o=>({...o,[`${tid}-${nm}`]:true}));
+    setAddZoneBuf("");setAddZoneFor(null);
+  };
   const[dragId,setDragId]=useState(null);
   const[dragTarget,setDragTarget]=useState(null);
   const dragIdRef=useRef(null);
@@ -1727,10 +1744,15 @@ function QuoteBuilder({initData,onSave,onBack}){
       }
     }
   };
+  // Zone toggle now behaves like the trade master toggle: ON selects every line in the
+  // zone, OFF deselects them all. Expand/collapse is the chevron's job alone (CBtn) — this
+  // was previously a display-only mirror that silently did nothing when tapped.
   const toggleZM=(t,z)=>{
-    const isOpen=isZO(t.id,z);
-    setOpenTrades(o=>({...o,[t.id]:true}));
-    setOpenZones(o=>({...o,[zK(t.id,z)]:!isOpen}));
+    if(!markRevised())return;
+    const turnOn=!zoneOn(t,z);
+    const ids=zoneIDs(t,z);
+    setItemOnRaw(o=>{const n={...o};ids.forEach(id=>{n[id]=turnOn;});return n;});
+    if(turnOn){setOpenTrades(o=>({...o,[t.id]:true}));setOpenZones(o=>({...o,[zK(t.id,z)]:true}));}
   };
   const toggleItem=(id,tradeId,zone)=>{
     if(!markRevised())return;              // asks once; abort cleanly if the user cancels
@@ -1830,10 +1852,17 @@ function QuoteBuilder({initData,onSave,onBack}){
 
   const saveCustom=()=>{
     if(!customForm?.desc||!customForm?.price)return;
-    const id=`c${Date.now()}${Math.random().toString(36).slice(2,6)}`;
     const capDesc=customForm.desc.charAt(0).toUpperCase()+customForm.desc.slice(1);
     const cZone=customForm.zone||"Whole House";
     const cTrade=customForm.tradeId;
+    if(customForm.editId){
+      // EDIT PATH — only reachable while Pending (director PIN unlocks an Approved line back
+      // to Pending first). Edits silently, no re-approval prompt, stamp stays cleared.
+      setCustoms(c=>c.map(x=>x.id===customForm.editId?{...x,zone:cZone,desc:capDesc,unit:customForm.unit||"LS",price:Math.max(parseFloat(customForm.price)||0,0)}:x));
+      setCustomForm(null);
+      return;
+    }
+    const id=`c${Date.now()}${Math.random().toString(36).slice(2,6)}`;
     setCustoms(c=>[...c,{id,tradeId:cTrade,zone:cZone,desc:capDesc,unit:customForm.unit||"LS",price:Math.max(parseFloat(customForm.price)||0,0),approved:false}]);
     // Born ON. An off line is invisible to pendingItems, so the approval banner never
     // fires and the whole approval gate silently does nothing.
@@ -1841,6 +1870,12 @@ function QuoteBuilder({initData,onSave,onBack}){
     setOpenTrades(o=>({...o,[cTrade]:true}));
     setOpenZones(o=>({...o,[`${cTrade}-${cZone}`]:true}));
     setCustomForm(null);
+  };
+  // Director PIN unlocks an APPROVED custom line back to editable Pending, clearing the
+  // approval stamp — it can never stay "approved" at a price nobody re-checked.
+  const unlockCustom=c=>{
+    if(window.prompt("Director PIN to unlock this line for editing:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+    setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:false}:x));
   };
 
   // Shared UI helpers
@@ -1997,7 +2032,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             {projectName&&<span style={{fontSize:11,color:C.stone,marginLeft:6}}>· {projectName}</span>}
             <div style={{display:"flex",alignItems:"center",gap:6,marginTop:1}}>
               {isVO&&<span style={{background:C.terra,color:"#fff",borderRadius:3,padding:"1px 7px",fontSize:9,fontWeight:700,letterSpacing:1}}>VO-{voNumber}</span>}
-              <span style={{fontSize:8,color:C.stone,letterSpacing:2}}>CODSTUDIO v6.7</span>
+              <span style={{fontSize:8,color:C.stone,letterSpacing:2}}>CODSTUDIO v7.0</span>
             </div>
           </div>
         </div>
@@ -2481,14 +2516,21 @@ function QuoteBuilder({initData,onSave,onBack}){
                         <button onClick={()=>{if(!isLocked)setCustoms(x=>x.filter(y=>y.id!==c.id));}} style={{background:"transparent",border:"none",color:C.danger,cursor:"pointer",fontSize:12}}>✕</button>
                         <Toggle on={on} small disabled={isLocked} onClick={()=>{if(!isLocked)toggleItem(c.id,1,c.zone);}}/>
                         <div>
-                          <div style={{fontSize:12,fontFamily:T.sans}}>{c.desc}
-                            {!c.approved&&<span style={{marginLeft:6,background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"1px 5px",fontSize:8,fontWeight:700}}>PENDING</span>}
+                          <div style={{fontSize:12,fontFamily:T.sans,display:"flex",alignItems:"center",gap:5}}>
+                            {c.desc}
+                            {!c.approved&&<span style={{background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"1px 5px",fontSize:8,fontWeight:700}}>PENDING</span>}
+                            {!isLocked&&!c.approved&&<span onClick={()=>setCustomForm({editId:c.id,tradeId:1,desc:c.desc,unit:c.unit,zone:c.zone,price:c.price})}
+                              title="Edit while Pending" style={{fontSize:10,color:C.gold,cursor:"pointer",opacity:0.75}}>✎</span>}
                           </div>
                           <div style={{fontSize:10,color:C.stone}}>{c.unit}</div>
                         </div>
                         <div style={{textAlign:"right"}}>
                           {c.approved
-                            ?<span style={{fontSize:12,fontFamily:T.serif}}>{fmt(c.price)}</span>
+                            ?(!isLocked
+                                ?<span style={{fontSize:12,fontFamily:T.serif,display:"flex",alignItems:"center",gap:5,justifyContent:"flex-end"}}>{fmt(c.price)}
+                                    {USER_ROLE>=ROLES.director&&<span onClick={()=>unlockCustom(c)} title="Director PIN unlock" style={{fontSize:9,color:C.stone,cursor:"pointer"}}>🔓</span>}
+                                  </span>
+                                :<span style={{fontSize:12,fontFamily:T.serif}}>{fmt(c.price)}</span>)
                             :!isLocked
                               ?<Btn ch={USER_ROLE>=ROLES.director?"Approve":"🔒 Approve"} onClick={()=>{
                                   if(USER_ROLE<ROLES.director&&window.prompt("Director PIN to approve this custom line:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
@@ -2518,7 +2560,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                         <input type="number" value={customForm.price||""} onChange={e=>setCustomForm(f=>({...f,price:e.target.value}))}
                           style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px 8px",fontSize:11,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
                       </div>
-                      <Btn ch="Save Item" onClick={saveCustom} bg={C.terra} col={C.white} sm/>
+                      <Btn ch={customForm.editId?"Save changes":"Save Item"} onClick={saveCustom} bg={C.terra} col={C.white} sm/>
                       <OBtn ch="Cancel" onClick={()=>setCustomForm(null)} col={C.stone} sm/>
                     </div>
                   ):(!isLocked&&(
@@ -2608,6 +2650,8 @@ function QuoteBuilder({initData,onSave,onBack}){
                         onTier={()=>{}}
                         onImg={()=>{}}
                         onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
+                        onEditCustom={cc=>setCustomForm({editId:cc.id,tradeId:cc.tradeId,desc:cc.desc,unit:cc.unit,zone:cc.zone,price:cc.price})}
+                        onUnlockCustom={cc=>unlockCustom(cc)}
                         poaUnlocked={poaUnlocked}
                         poaEdited={isPoaEdited(c.id)}
                         poaVal={poaPrices[c.id]}
@@ -2691,6 +2735,8 @@ function QuoteBuilder({initData,onSave,onBack}){
                               onNote={v=>setNotes(n=>({...n,[c.id]:v}))}
                               onTier={()=>{}} onImg={()=>{}}
                               onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
+                        onEditCustom={cc=>setCustomForm({editId:cc.id,tradeId:cc.tradeId,desc:cc.desc,unit:cc.unit,zone:cc.zone,price:cc.price})}
+                        onUnlockCustom={cc=>unlockCustom(cc)}
                               poaUnlocked={poaUnlocked}
                               poaEdited={isPoaEdited(c.id)}
                               poaVal={poaPrices[c.id]}
@@ -2735,7 +2781,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                       ))}
                     </div>
                     <div style={{display:"flex",gap:7}}>
-                      <Btn ch="Save Item" onClick={saveCustom} bg={C.terra} col={C.white} sm/>
+                      <Btn ch={customForm.editId?"Save changes":"Save Item"} onClick={saveCustom} bg={C.terra} col={C.white} sm/>
                       <OBtn ch="Cancel" onClick={()=>setCustomForm(null)} col={C.stone} sm/>
                     </div>
                   </div>
@@ -2746,10 +2792,23 @@ function QuoteBuilder({initData,onSave,onBack}){
                       + Add item
                     </button>
                     {!trade.noZone&&ADDZONE_OK.includes(trade.id)&&(
-                      <button onClick={()=>addZone(trade.id)}
-                        style={{background:"transparent",border:`1px dashed ${C.gold}`,borderRadius:16,color:C.gold,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,padding:"5px 16px",letterSpacing:0.3}}>
-                        ＋ Add Zone
-                      </button>
+                      addZoneFor===trade.id?(
+                        <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                          <input autoFocus placeholder="Zone name…" value={addZoneBuf}
+                            onChange={e=>setAddZoneBuf(e.target.value)}
+                            onKeyDown={e=>{if(e.key==="Enter")commitAddZone(trade.id);if(e.key==="Escape"){setAddZoneBuf("");setAddZoneFor(null);}}}
+                            style={{border:`1px solid ${C.gold}`,borderRadius:16,padding:"5px 12px",fontSize:11,fontFamily:T.sans,background:C.cream,width:140}}/>
+                          <button onClick={()=>commitAddZone(trade.id)}
+                            style={{background:C.gold,border:`1px solid ${C.gold}`,borderRadius:16,color:C.ink,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:T.sans,padding:"5px 14px"}}>Add</button>
+                          <button onClick={()=>{setAddZoneBuf("");setAddZoneFor(null);}}
+                            style={{background:"transparent",border:"none",color:C.stone,fontSize:11,cursor:"pointer",fontFamily:T.sans}}>Cancel</button>
+                        </div>
+                      ):(
+                        <button onClick={()=>{setAddZoneBuf("");setAddZoneFor(trade.id);}}
+                          style={{background:"transparent",border:`1px dashed ${C.gold}`,borderRadius:16,color:C.gold,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans,padding:"5px 16px",letterSpacing:0.3}}>
+                          ＋ Add Zone
+                        </button>
+                      )
                     )}
                   </div>
                 ))}
