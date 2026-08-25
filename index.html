@@ -600,6 +600,35 @@ const cloudPush=async q=>{
     setCloudFail(false);return true;
   }catch(e){console.error("cloudPush threw",e);setCloudFail(true);return false;}
 };
+const LOCK_TIMEOUT=45000;// a lock older than this is treated as abandoned (crashed tab, closed browser)
+const LOCK_HEARTBEAT=20000;// how often the holder refreshes their claim
+// Piggybacks on the existing quotes.payload column — no schema migration needed.
+// Trade-off: this is poll-based, not a live push, so there is a window of a few seconds
+// where two people could both pass the check before either claims it. Acceptable for the
+// "stop accidental overwrite" goal; a Supabase Realtime channel would close that window
+// fully if it's ever worth the extra build.
+const readLock=async id=>{
+  const{data}=await sb.from("quotes").select("payload").eq("id",id).maybeSingle();
+  const lk=data?.payload?._lock;
+  if(!lk||!lk.by||!lk.at)return null;
+  if(Date.now()-lk.at>LOCK_TIMEOUT)return null;// stale, ignore
+  return lk;
+};
+const claimLock=async(id,by)=>{
+  const{data}=await sb.from("quotes").select("payload").eq("id",id).maybeSingle();
+  if(!data?.payload)return false;
+  const merged={...data.payload,_lock:{by,at:Date.now()}};
+  const{error}=await sb.from("quotes").upsert({id,ref:merged.client?.ref||null,payload:merged});
+  return!error;
+};
+const releaseLock=async(id,by)=>{
+  try{
+    const{data}=await sb.from("quotes").select("payload").eq("id",id).maybeSingle();
+    if(!data?.payload?._lock||data.payload._lock.by!==by)return;// someone else already took it — don't clear their claim
+    const merged={...data.payload,_lock:null};
+    await sb.from("quotes").upsert({id,ref:merged.client?.ref||null,payload:merged});
+  }catch(e){console.warn("releaseLock skipped",e);}
+};
 const cloudDelete=async id=>{
   try{
     const{error}=await sb.from("quotes").delete().eq("id",id);
@@ -1364,6 +1393,29 @@ function AdminPanel({onBack}){
 
 // ── QUOTE BUILDER ─────────────────────────────────────────────────────────────
 function QuoteBuilder({initData,onSave,onBack}){
+  const myName=SESSION?SESSION.name:"Unknown";
+  // CONCURRENT-EDIT LOCK — on opening an EXISTING quote, check whether someone else already
+  // holds it. If so, block editing and name them rather than letting two people silently
+  // overwrite each other on the 1.5s autosave. New (unsaved) quotes have no id yet — nothing
+  // to lock until the first save.
+  const[lockState,setLockState]=useState(initData.id?"checking":"free");// checking | blocked | free
+  const[lockedBy,setLockedBy]=useState(null);
+  const[readOnlyOverride,setReadOnlyOverride]=useState(false);
+  useEffect(()=>{
+    if(!initData.id){setLockState("free");return;}
+    let cancelled=false,hb=null;
+    (async()=>{
+      const lk=await readLock(initData.id);
+      if(cancelled)return;
+      if(lk&&lk.by!==myName){setLockedBy(lk);setLockState("blocked");return;}
+      const ok=await claimLock(initData.id,myName);
+      if(cancelled)return;
+      setLockState("free");
+      hb=setInterval(()=>{claimLock(initData.id,myName);},LOCK_HEARTBEAT);
+    })();
+    return()=>{cancelled=true;if(hb)clearInterval(hb);if(initData.id)releaseLock(initData.id,myName);};
+  },[initData.id]);
+  const isBlocked=lockState==="blocked"&&!readOnlyOverride;
   const[snapshot,setSnapshot]=useState(initData.snapshot||null);
   // The rate card as it stood when this quote was ISSUED. Overlaid on top of the live card
   // so every code path — totals, print rows, the quote list — reads the frozen values with
@@ -1953,6 +2005,29 @@ function QuoteBuilder({initData,onSave,onBack}){
 
   return(
     <div style={{fontFamily:T.sans,background:C.cream,minHeight:"100vh",color:C.ink}}>
+      {/* CONCURRENT-EDIT LOCK — blocks entry while someone else holds this quote */}
+      {isBlocked&&(
+        <div style={{position:"fixed",inset:0,background:"#00000099",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:C.cream,borderRadius:6,padding:"28px 30px",maxWidth:380,textAlign:"center",fontFamily:T.sans}}>
+            <div style={{fontSize:28,marginBottom:10}}>🔒</div>
+            <div style={{fontSize:15,fontWeight:700,marginBottom:6,color:C.ink}}>Already open</div>
+            <div style={{fontSize:13,color:C.stone,marginBottom:18,lineHeight:1.5}}>
+              <strong>{lockedBy?.by}</strong> opened this quote {lockedBy?Math.max(1,Math.round((Date.now()-lockedBy.at)/1000)):0}s ago.
+              Editing at the same time is how lines get silently overwritten — wait for them to close it, or go back.
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+              <button onClick={onBack} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:3,padding:"8px 16px",fontSize:12,fontFamily:T.sans,cursor:"pointer",color:C.ink}}>← Go back</button>
+              <button onClick={()=>{const lk=readLock(initData.id);setLockState("checking");
+                  (async()=>{const l=await readLock(initData.id);if(l&&l.by!==myName){setLockedBy(l);setLockState("blocked");}else{await claimLock(initData.id,myName);setLockState("free");}})();
+                }} style={{background:"transparent",border:`1px solid ${C.gold}`,borderRadius:3,padding:"8px 16px",fontSize:12,fontFamily:T.sans,cursor:"pointer",color:C.gold}}>↻ Check again</button>
+              {USER_ROLE>=ROLES.director&&(
+                <button onClick={()=>{if(window.confirm(`${lockedBy?.by} still shows as active. Take over anyway? If they are mid-edit, whatever they haven't saved yet will be lost.`))setReadOnlyOverride(true);}}
+                  style={{background:C.terra,border:"none",borderRadius:3,padding:"8px 16px",fontSize:12,fontFamily:T.sans,cursor:"pointer",color:"#fff"}}>Director override</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* TOPBAR */}
       {!snapshot&&!isVO&&status!=="Draft"&&<div className="no-print" style={{background:"#7A5C1E",color:"#FFF6E0",padding:"9px 16px",fontFamily:T.sans,fontSize:12,textAlign:"center",letterSpacing:0.2}}>
         ⚠️ This {status==="Signed"?"contract":"quote"} has NO frozen rate card — it is still priced from the live rate card and will change value if rates are updated.
@@ -2645,7 +2720,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                         isOn={on} qty={qty} ep={c.price} tier="base" zone={c.zone} img={null} isLocked={isLocked} note={notes[c.id]||""}
                         onToggle={()=>toggleItem(c.id,trade.id,c.zone)}
                         onQtyChange={v=>setQtys(q=>({...q,[c.id]:v}))}
-                        onQtyBlur={v=>setQtys(q=>({...q,[c.id]:parseFloat(v)||1}))}
+                        onQtyBlur={v=>setQtys(q=>({...q,[c.id]:parseFloat(v)||0}))}
                         onNote={v=>setNotes(n=>({...n,[c.id]:v}))}
                         onTier={()=>{}}
                         onImg={()=>{}}
@@ -2731,7 +2806,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                               isOn={on} qty={qty} ep={c.price} tier="base" zone={zone} img={null} isLocked={isLocked} note={notes[c.id]||""}
                               onToggle={()=>toggleItem(c.id,trade.id,zone)}
                               onQtyChange={v=>setQtys(q=>({...q,[c.id]:v}))}
-                              onQtyBlur={v=>setQtys(q=>({...q,[c.id]:parseFloat(v)||1}))}
+                              onQtyBlur={v=>setQtys(q=>({...q,[c.id]:parseFloat(v)||0}))}
                               onNote={v=>setNotes(n=>({...n,[c.id]:v}))}
                               onTier={()=>{}} onImg={()=>{}}
                               onApprove={()=>setCustoms(prev=>prev.map(x=>x.id===c.id?{...x,approved:true}:x))}
@@ -2765,7 +2840,10 @@ function QuoteBuilder({initData,onSave,onBack}){
                             </select>
                           ):k==="zone"?(
                             <select value={customForm.zone||"Whole House"} onChange={e=>setCustomForm(f=>({...f,zone:e.target.value}))} style={{width:"100%",border:`1px solid ${C.border}`,borderRadius:3,padding:"6px",fontSize:11,fontFamily:T.sans,background:C.cream}}>
-                              {zoneList.map(z=><option key={z} value={z}>{z}</option>)}
+                              {/* Must match the trade's OWN zone list — Carpentry/Countertop have a fixed
+                                  room list distinct from the general project zoneList. Picking a zone from
+                                  the wrong list saved fine but never rendered on the working page, only Preview. */}
+                              {(trade.zones||zoneList).map(z=><option key={z} value={z}>{z}</option>)}
                             </select>
                           ):(
                             <input placeholder={ph} value={customForm[k]||""}
