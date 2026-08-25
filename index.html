@@ -162,7 +162,6 @@ const PAYNOW_QR="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAAFoCAAAAABfj
 const PAYNOW_UEN="202041797K";
 const STAFF={
   "work":              {name:"Dylan Lu",       mail:"work@ikigaiinterior.com",      role:3},
-  "tammy.vu":          {name:"Tammy Vu",       mail:"tammy.vu@ikigaiinterior.com",  role:2},
   "euric":             {name:"Euric Ng",       mail:"euric@ikigaiinterior.com",     role:2},
   "euric.ng":          {name:"Euric Ng",       mail:"euric@ikigaiinterior.com",     role:2},
   "chloe.tng":         {name:"Chloe Tng",      mail:"chloe.tng@ikigaiinterior.com", role:1},
@@ -1401,6 +1400,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[lockState,setLockState]=useState(initData.id?"checking":"free");// checking | blocked | free
   const[lockedBy,setLockedBy]=useState(null);
   const[readOnlyOverride,setReadOnlyOverride]=useState(false);
+  const myLockRef=useRef(null);// {by,at} once claimed — carried into every autosave so it isn't wiped
   useEffect(()=>{
     if(!initData.id){setLockState("free");return;}
     let cancelled=false,hb=null;
@@ -1410,8 +1410,9 @@ function QuoteBuilder({initData,onSave,onBack}){
       if(lk&&lk.by!==myName){setLockedBy(lk);setLockState("blocked");return;}
       const ok=await claimLock(initData.id,myName);
       if(cancelled)return;
+      myLockRef.current={by:myName,at:Date.now()};
       setLockState("free");
-      hb=setInterval(()=>{claimLock(initData.id,myName);},LOCK_HEARTBEAT);
+      hb=setInterval(()=>{claimLock(initData.id,myName);myLockRef.current={by:myName,at:Date.now()};},LOCK_HEARTBEAT);
     })();
     return()=>{cancelled=true;if(hb)clearInterval(hb);if(initData.id)releaseLock(initData.id,myName);};
   },[initData.id]);
@@ -1689,6 +1690,7 @@ function QuoteBuilder({initData,onSave,onBack}){
 
   const buildSaveData=()=>({
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
+    _lock:myLockRef.current,// carry the held lock forward — without this, every 1.5s autosave silently erases it
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
     isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,revised,
     openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved,
@@ -3664,7 +3666,24 @@ function App(){
     });
   },[]);
   const signOut=async()=>{await sb.auth.signOut();window.location.reload();};
-  const openQuote=q=>{setActiveQuote(q);setScreen("builder");};
+  // Quotes are loaded into memory ONCE at boot. Opening one later just handed back whatever
+  // was cached then — so if a colleague added a line five minutes ago, you'd open a stale
+  // copy and never know, even before touching anything yourself. Refetch THIS quote fresh
+  // the moment it's opened; fall back to the cached copy only if that fetch fails.
+  const[opening,setOpening]=useState(false);
+  const openQuote=async q=>{
+    const existsInCloud=loadVersions().some(v=>v.id===q.id);
+    if(!existsInCloud){setActiveQuote(q);setScreen("builder");return;}// genuinely new, unsaved — nothing to fetch yet
+    setOpening(true);
+    try{
+      const{data,error}=await sb.from("quotes").select("payload").eq("id",q.id).maybeSingle();
+      const fresh=(!error&&data?.payload)?data.payload:q;
+      const versions=loadVersions().map(v=>v.id===fresh.id?fresh:v);
+      saveVersions(versions);
+      setActiveQuote(fresh);
+    }catch(e){console.warn("fresh-open fetch failed, using cached copy",e);setActiveQuote(q);}
+    setOpening(false);setScreen("builder");
+  };
   const newQuote=(ptype="condo")=>{const q=blankQuote(null,ptype);openQuote(q);};
   const newVO=parent=>{
     // A Variation Order varies an EXECUTED contract. If the parent is not signed, there is
@@ -3688,6 +3707,7 @@ function App(){
   };
   const goBack=()=>{setScreen("list");setActiveQuote(null);};
   if(!booted)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,fontFamily:T.sans,color:C.stone,fontSize:13,letterSpacing:1}}>Connecting to CODSTUDIO…</div>;
+  if(opening)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,fontFamily:T.sans,color:C.stone,fontSize:13,letterSpacing:1}}>Loading latest version…</div>;
   if(denied)return(
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.cream,fontFamily:T.sans,textAlign:"center"}}>
       <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:6,padding:"40px 44px"}}>
