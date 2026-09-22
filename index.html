@@ -1673,6 +1673,10 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[poaPinBuf,setPoaPinBuf]=useState("");
   const[extraZones,setExtraZones]=useState(initData.extraZones||[]);
   const[shownZones,setShownZones]=useState(initData.shownZones||{});// {"tid-zone":true} force-render empty zones
+  // A trade genre the user wants visible on the printed quote even with nothing priced inside
+  // yet — e.g. flagging "ACMV is in scope" before line items are confirmed. Independent of
+  // whether any item under it is actually selected.
+  const[forceShownTrades,setForceShownTrades]=useState(initData.forceShownTrades||{});
   const[zoneNames,setZoneNames]=useState(initData.zoneNames||{});
   const[editingZone,setEditingZone]=useState(null);
   const[zoneNameBuf,setZoneNameBuf]=useState("");
@@ -1841,14 +1845,14 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,descOverride,poaApproved,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,snapshot]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,descOverride,poaApproved,extraZones,shownZones,forceShownTrades,zoneNames,itemSeq,pendingApprovals,snapshot]);
 
   const buildSaveData=()=>({
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     _lock:myLockRef.current,// carry the held lock forward — without this, every 1.5s autosave silently erases it
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
     isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,revised,
-    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,descOverride,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved,
+    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,descOverride,extraZones,shownZones,forceShownTrades,zoneNames,itemSeq,pendingApprovals,poaApproved,
     snapshot
   });
   const[issuing,setIssuing]=useState(false);
@@ -1946,6 +1950,9 @@ function QuoteBuilder({initData,onSave,onBack}){
     const turnOn=!tradeOn(t);
     const ids=tradeIDs(t);
     setItemOnRaw(o=>{const n={...o};ids.forEach(id=>{n[id]=turnOn;});return n;});
+    // Manually enabling the trade — under any circumstance, even zero items selected —
+    // flags it to still appear in Preview as a named section, priced or not.
+    setForceShownTrades(o=>({...o,[t.id]:turnOn}));
     if(turnOn){
       setOpenTrades(o=>({...o,[t.id]:true}));
       if(!t.noZone){
@@ -2902,8 +2909,29 @@ function QuoteBuilder({initData,onSave,onBack}){
                     })}
                   </>
                 ):(
-                  (()=>{const baseZones=trade.zones||zoneList;const tradeZones=[...baseZones,...extraZones.filter(z=>!baseZones.includes(z))];return tradeZones;})().filter(z=>zonesMap[z]||tCusts.some(c=>c.zone===z)||shownZones[`${trade.id}-${z}`]).map(zone=>{
-                    const zItems=seqSort(zonesMap[zone]||[]);const zCusts=tCusts.filter(c=>c.zone===zone);
+                  (()=>{
+                    // SAFETY NET: a line's zone string is sometimes a name that no longer exists
+                    // in this trade's zone list — old data from before a zone fix, a renamed zone,
+                    // a manual edit, anything. Previously that line just vanished from the working
+                    // page with no way back (it still saved, still totalled, still printed — only
+                    // the editor couldn't find it, and Preview has no edit controls). It can never
+                    // be truly lost again: anything with an unrecognised zone surfaces here.
+                    const baseZones=trade.zones||zoneList;
+                    const known=new Set([...baseZones,...extraZones]);
+                    const orphanCustoms=tCusts.filter(c=>!known.has(c.zone));
+                    const orphanZoneNames=Object.keys(zonesMap).filter(z=>!known.has(z));
+                    const hasOrphans=orphanCustoms.length>0||orphanZoneNames.length>0;
+                    const ORPHAN_ZONE="⚠️ Needs Zone — tap ✎ to reassign";
+                    const tradeZones=[...baseZones,...extraZones.filter(z=>!baseZones.includes(z)),...(hasOrphans?[ORPHAN_ZONE]:[])];
+                    return{tradeZones,ORPHAN_ZONE,orphanCustoms,orphanZoneNames};
+                  })().tradeZones.filter(z=>zonesMap[z]||tCusts.some(c=>c.zone===z)||shownZones[`${trade.id}-${z}`]||z.startsWith("⚠️")).map(zone=>{
+                    const isOrphanZone=zone.startsWith("⚠️");
+                    const baseZones=trade.zones||zoneList;
+                    const known=new Set([...baseZones,...extraZones]);
+                    const zItems=isOrphanZone
+                      ?seqSort(Object.keys(zonesMap).filter(z=>!known.has(z)).flatMap(z=>zonesMap[z]))
+                      :seqSort(zonesMap[zone]||[]);
+                    const zCusts=isOrphanZone?tCusts.filter(c=>!known.has(c.zone)):tCusts.filter(c=>c.zone===zone);
                     if(!zItems.length&&!zCusts.length)return null;
                     const zOpen=isZO(trade.id,zone);
                     const zSub=zItems.reduce((s,i)=>{const p=i.srcId?i.price:getEP(i);return isOn(i.id)?s+(parseFloat(qtys[i.id])||0)*p:s;},0)+zCusts.filter(c=>c.approved&&isOn(c.id)).reduce((s,c)=>s+(parseFloat(qtys[c.id])||1)*c.price,0);
@@ -3510,8 +3538,9 @@ function QuoteBuilder({initData,onSave,onBack}){
           {(()=>{
             return [...TRADES.map(trade=>{
               const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
+              const forcedEmpty=trade.id!==1&&tSub===0&&!!forceShownTrades[trade.id];
               if(trade.id===1&&designSubtotal===0)return null;
-              if(trade.id!==1&&tSub===0)return null;
+              if(trade.id!==1&&tSub===0&&!forcedEmpty)return null;
               // Selected rows for this trade — catalog items + dupes + approved customs,
               // mirroring the tradeSubs math so no selected line is dropped from print.
               let rows;
@@ -3534,7 +3563,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                   amount:(parseFloat(qtys[c.id])||1)*c.price}));
                 rows=[...base,...dup,...cus];
               }
-              if(!rows.length)return null;
+              if(!rows.length&&!forcedEmpty)return null;
               rows=seqSort(rows);// number in the order items were actually selected, not catalog order
               return(
                 <div key={trade.id} style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:6,overflow:"hidden"}}>
@@ -3548,7 +3577,9 @@ function QuoteBuilder({initData,onSave,onBack}){
                   <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",background:"#F5F0E8",padding:"4px 16px"}}>
                     {["#","DESCRIPTION","QTY","UNIT","AMOUNT"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>)}
                   </div>
-                  {rows.map((r,i)=>{
+                  {forcedEmpty&&!rows.length?(
+                    <div style={{padding:"10px 16px",fontSize:11,fontFamily:T.sans,color:C.stone,fontStyle:"italic"}}>Included in scope — pricing to be confirmed separately.</div>
+                  ):rows.map((r,i)=>{
                     // Numbered per trade — <trade>.<running position>, e.g. Design's third
                     // selected line is 1.3 — resets at every trade section rather than
                     // running as one long count across the whole quote.
