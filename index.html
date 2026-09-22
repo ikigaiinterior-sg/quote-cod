@@ -166,6 +166,7 @@ const STAFF={
   "euric.ng":          {name:"Euric Ng",       mail:"euric@ikigaiinterior.com",     role:2},
   "chloe.tng":         {name:"Chloe Tng",      mail:"chloe.tng@ikigaiinterior.com", role:1},
   "keith.tan":         {name:"Keith Tan",      mail:"keith.tan@ikigaiinterior.com", role:1},
+  "cl.lee":            {name:"Chee Ling Lee",  mail:"cl.lee@ikigaiinterior.com",    role:1},
   "admin":             {name:"Ikigai Admin",   mail:"admin@ikigaiinterior.com",     role:3}
 };
 const staffByEmail=e=>STAFF[String(e||"").split("@")[0].toLowerCase()]||null;
@@ -207,14 +208,17 @@ const PROJECT_TYPES={
   penthouse:{key:"penthouse",label:"Penthouse / Duplex",feeBasis:"psf",psfRate:5,lumpSum:0,
     zones:["Entrance/Foyer","Living/Dining","Kitchen/Yard","Staircase","Master Bedroom","Bedroom 2","Bedroom 3","Bedroom 4","Bedroom 5","Master Toilet","Toilet 2","Toilet 3","Toilet 4","Toilet 5","Toilet 6","Balcony Main","Balcony 2","Balcony 3","Balcony 4","Balcony 5","Attic/Roof Terrace","Whole House"],
     caps:{bedrooms:5,toilets:6,balconies:5,staircase:1},},
-  commercial:{key:"commercial",label:"Commercial",feeBasis:"psf",psfRate:5,lumpSum:0,
-    zones:["Reception","Open Workspace","Meeting Room 1","Meeting Room 2","Director Room","Pantry","Toilet 1","Toilet 2","Store","Corridor","Whole Unit"],},
+  // Real zones + lump-sum design fee from the commercial rate card (built from actual
+  // FNB1/Office/Retail quotes) — replaces the earlier placeholder list.
+  commercial:{key:"commercial",label:"Commercial",feeBasis:"lump",psfRate:0,lumpSum:0,
+    zones:["Shopfront/Facade","Reception","General Office Area","Director/CEO Office","Meeting/Conference","Open Workstation","Pantry/Kitchen","Store","Server/IT","Toilets","Corridor","Retail Floor","Dining Area (F&B)","Kitchen/Prep (F&B)","Whole Unit"],},
 };
 const PT=k=>PROJECT_TYPES[k]||PROJECT_TYPES.condo;
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
 const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",legal:"IKIGAI INTERIOR PTE LTD",uen:"202041797K",gstReg:"202041797K",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier Pte Ltd",legal:"IKIGAI DESIGN ATELIER PTE LTD",uen:"202606425G",gstReg:null,sub:"Non-GST · UEN 202606425G",gst:false}];
 const entReg=e=>e.gstReg?`UEN ${e.uen} · GST Reg ${e.gstReg}`:`UEN ${e.uen}`;
-const PAY_PRESETS={confirm100:{label:"100% Upon Confirmation",minRole:2,items:[{pct:100,label:"Full payment upon confirmation of agreement"}]},full100:{label:"100% Upon Completion",minRole:2,items:[{pct:100,label:"Full payment upon practical completion of works"}]},vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]}};
+const PAY_PRESETS={confirm100:{label:"100% Upon Confirmation",minRole:2,items:[{pct:100,label:"Full payment upon confirmation of agreement"}]},full100:{label:"100% Upon Completion",minRole:2,items:[{pct:100,label:"Full payment upon practical completion of works"}]},vo100:{label:"Variation Order — 100% on Completion",minRole:1,items:[{pct:100,label:"Full payment upon completion of variation works"}]},standard:{label:"Standard 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 6 (Masonry)"},{pct:20,label:"Fabrication of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},alt:{label:"Alternative 4-Stage",minRole:2,items:[{pct:20,label:"Deposit upon confirmation of agreement"},{pct:40,label:"Upon commencement of works"},{pct:35,label:"Delivery of carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]},small:{label:"Small Project 3-Stage",minRole:2,items:[{pct:40,label:"Deposit upon confirmation of agreement"},{pct:50,label:"Upon commencement of works"},{pct:10,label:"Upon practical completion"}]},
+commercial5:{label:"Commercial 5-Stage",minRole:1,items:[{pct:15,label:"Deposit upon confirmation of agreement"},{pct:35,label:"Upon commencement of works"},{pct:25,label:"Upon commencement of Stage 7"},{pct:20,label:"Carpentry works (include full VO)"},{pct:5,label:"Upon practical completion"}]}};
 const ROLES={staff:1,senior:2,director:3};
 let SESSION=null;            // {name,email,role}
 let USER_ROLE=ROLES.staff;   // set on login
@@ -229,6 +233,123 @@ const RATECARD_KEY="cods_ratecard_overrides";
 const DESIGN_PSF_RATE=5;
 
 // ── RATE CARD ─────────────────────────────────────────────────────────────────
+
+// ── COMMERCIAL RATE CARD — real selling prices from Dylan's actual FNB1/Office/Retail
+// quotes (source: "CODSTUDIO COMMERCIAL RateCard v2 REAL.xlsx"). Design fee is lump sum,
+// not PSF (see COMMERCIAL_DESIGN_ITEMS_CFG above). Heavy/noisy works after 6pm per the
+// building-hours rule — noted per trade below, matches the Demolition SOP correction.
+// price:0,poa:true = the rate card had this line blank/POA; quote it via the manual-price
+// field on that item (director approval gate applies, same as every other POA line).
+const COMMERCIAL_TRADES=[
+  {id:1,code:"01",name:"Design",subheader:"Commercial Design & Consultation Fees",noZone:true,items:[]},
+  {id:2,code:"02",name:"Pre & Post Renovation",noZone:true,items:[
+    {id:"c2.1",desc:"Submission of fitting-out documents to management with approval for PTW",unit:"LS",price:500},
+    {id:"c2.2",desc:"Public Liability coverage + risk assessment preparation & submission (1m–2m coverage)",unit:"LS",price:1000},
+    {id:"c2.3",desc:"Project management & site supervision",unit:"LS",price:1000},
+    {id:"c2.4",desc:"Floor protection + sticker up main glass door (corrugated paper)",unit:"LS",price:200},
+    {id:"c2.5",desc:"Clean entire unit upon work completion",unit:"Trip",price:500},
+    {id:"c2.6",desc:"Removal of hoarding + make good to existing areas",unit:"LS",price:600},
+  ]},
+  {id:3,code:"03",name:"Demolition",note:"After 6pm office hours — building management requirement.",noZone:true,items:[
+    {id:"c3.1",desc:"Hack / dismantle / disposal — labour & tools (after 6pm)",unit:"LS",price:0,poa:true},
+    {id:"c3.2",desc:"Toilet floor & wall tiles removal",unit:"Lot",price:899},
+    {id:"c3.3",desc:"Bathtub removal",unit:"Lot",price:193},
+  ]},
+  {id:4,code:"04",name:"Electrical",note:"Exposed PVC casing; Honeywell white faceplates included; light fittings not supplied.",noZone:true,items:[
+    {id:"c4.1",desc:"Lighting / hanging / track / wall light / ceiling fan point",unit:"no.",price:36},
+    {id:"c4.2",desc:"LED light point (with install)",unit:"no.",price:76},
+    {id:"c4.3",desc:"LED RGB light point (with install)",unit:"no.",price:120},
+    {id:"c4.4",desc:"LED light point for signage",unit:"no.",price:130},
+    {id:"c4.5",desc:"13A x 1 power point",unit:"no.",price:64},
+    {id:"c4.6",desc:"13A x 2 power point",unit:"no.",price:70},
+    {id:"c4.7",desc:"15A power point (aircon)",unit:"no.",price:114},
+    {id:"c4.8",desc:"Data point – Cat6",unit:"no.",price:139},
+    {id:"c4.9",desc:"Data point – Cat6A",unit:"no.",price:228},
+    {id:"c4.10",desc:"Telephone point – Cat6",unit:"no.",price:139},
+    {id:"c4.11",desc:"Speaker point",unit:"no.",price:64},
+    {id:"c4.12",desc:"Relocate existing DB to new location w/ in-coming wire extension",unit:"no.",price:1090},
+    {id:"c4.13",desc:"DB Board (3-room / small)",unit:"no.",price:442},
+    {id:"c4.14",desc:"DB Board (4-5 room / medium)",unit:"no.",price:506},
+    {id:"c4.15",desc:"DB 32A SPN",unit:"no.",price:1159},
+    {id:"c4.16",desc:"Install exit sign / emergency light",unit:"no.",price:48},
+    {id:"c4.17",desc:"GI conduit for electrical concealed works",unit:"no.",price:273},
+    {id:"c4.18",desc:"Electrical Testing & Commissioning (LEW endorsement)",unit:"no.",price:2250},
+    {id:"c4.19",desc:"Concealed wiring works — labour",unit:"LS",price:0,poa:true},
+  ]},
+  {id:5,code:"05",name:"M&E, ACMV & Fire Safety",note:"Mechanical ventilation, air-con, and fire protection works — PE/QP endorsement required before SCDF submission.",noZone:true,items:[
+    {id:"c5.1",desc:"Supply & install ACMV main duct with internal insulation",unit:"LS",price:0,poa:true},
+    {id:"c5.2",desc:"PE endorsement for ACMV works",unit:"LS",price:0,poa:true},
+    {id:"c5.3",desc:"Fire protection — supply & install sprinklers, piping from building fire outlet",unit:"LS",price:0,poa:true},
+    {id:"c5.4",desc:"QP submission to SCDF for FSC",unit:"LS",price:0,poa:true},
+    {id:"c5.5",desc:"Supply main-sub pipe to lower level",unit:"LS",price:0,poa:true},
+    {id:"c5.6",desc:"Water-borne fees + labour for supervision",unit:"LS",price:0,poa:true},
+    {id:"c5.7",desc:"Licensed plumber endorsement",unit:"LS",price:0,poa:true},
+  ]},
+  {id:6,code:"06",name:"Masonry",note:"Based on ceiling height.",noZone:true,items:[
+    {id:"c6.1",desc:"Self-levelling compound to straighten existing flooring",unit:"LS",price:0,poa:true},
+    {id:"c6.2",desc:"Erect red-brick walls",unit:"LS",price:0,poa:true},
+    {id:"c6.3",desc:"Lay tiles up to 600x600 — floor",unit:"sqft",price:9},
+    {id:"c6.4",desc:"Lay tiles up to 600x600 — wall",unit:"sqft",price:9},
+    {id:"c6.5",desc:"Waterproofing",unit:"LS",price:0,poa:true},
+    {id:"c6.6",desc:"Wall screeding repair to smooth finish",unit:"LS",price:642},
+    {id:"c6.7",desc:"Screed floor to smooth",unit:"sqft",price:6},
+    {id:"c6.8",desc:"Cabinet base",unit:"pfr",price:30},
+    {id:"c6.9",desc:"Rubbish chute disposal",unit:"LS",price:232},
+  ]},
+  {id:7,code:"07",name:"Plumbing",note:"Surface stainless steel piping, 5-year leak warranty.",noZone:true,items:[
+    {id:"c7.1",desc:"Cold water inlet for store/pantry",unit:"LS",price:0,poa:true},
+    {id:"c7.2",desc:"Outlet discharge pipes for store/pantry",unit:"LS",price:0,poa:true},
+    {id:"c7.3",desc:"Kitchen sink + tap",unit:"no.",price:130},
+    {id:"c7.4",desc:"Wash basin + tap",unit:"no.",price:104},
+    {id:"c7.5",desc:"Toilet bowl – pedestal",unit:"no.",price:104},
+    {id:"c7.6",desc:"Instant / storage heater",unit:"no.",price:324},
+    {id:"c7.7",desc:"Floor trap + pipe",unit:"set",price:46},
+  ]},
+  {id:8,code:"08",name:"Partition & Ceiling",note:"After 6pm office hours.",noZone:true,items:[
+    {id:"c8.1",desc:"Install false ceiling",unit:"sqft",price:0,poa:true},
+    {id:"c8.2",desc:"Install partition wall (1-sided)",unit:"sqft",price:4},
+    {id:"c8.3",desc:"Install partition wall (2-sided)",unit:"sqft",price:5},
+    {id:"c8.4",desc:"Construct L-box (D300mm)",unit:"pfr",price:9},
+    {id:"c8.5",desc:"Install rockwool 60KG",unit:"sqft",price:1.6},
+    {id:"c8.6",desc:"Install rockwool 80KG",unit:"sqft",price:2},
+  ]},
+  {id:9,code:"09",name:"Carpentry",note:"Solid plywood, HPL finish, soft-close hinges; install after 6pm office hours.",
+    zones:["Shopfront/Facade","Reception","General Office Area","Director/CEO Office","Meeting/Conference","Pantry/Kitchen","Store","Retail Floor"],items:[
+    {id:"c9.1",desc:"Shopfront feature wall panels — solid core 5mm laminate c/w curved edges + mascot base",unit:"LS",price:0,poa:true,zone:"Shopfront/Facade"},
+    {id:"c9.2",desc:"Reception / L-shape counter in laminate finish",unit:"LS",price:0,poa:true,zone:"Reception"},
+    {id:"c9.3",desc:"Counter table in laminate finish",unit:"LS",price:0,poa:true,zone:"Retail Floor"},
+    {id:"c9.4",desc:"Settee seating in laminate finish",unit:"LS",price:0,poa:true,zone:"General Office Area"},
+    {id:"c9.5",desc:"Mobile pedestal (W405×D560×H605mm)",unit:"Qty",price:150,zone:"General Office Area"},
+    {id:"c9.6",desc:"Glass screen panel (H360×W1350×6mm)",unit:"Qty",price:150,zone:"Meeting/Conference"},
+    {id:"c9.7",desc:"Full-height storage / display cabinet",unit:"ft run",price:463,zone:"Store"},
+    {id:"c9.8",desc:"Pantry bottom casement cabinet",unit:"ft run",price:155,zone:"Pantry/Kitchen"},
+    {id:"c9.9",desc:"Pantry top-hung casement cabinet",unit:"ft run",price:155,zone:"Pantry/Kitchen"},
+    {id:"c9.10",desc:"Feature / branding wall in laminate",unit:"sqft",price:26,zone:"General Office Area"},
+  ]},
+  {id:10,code:"10",name:"Countertop",zones:["Pantry/Kitchen","Retail Floor"],items:[
+    {id:"c10.1",desc:"Supply & install quartz/kompacplus countertop",unit:"ft run",price:129,zone:"Pantry/Kitchen"},
+    {id:"c10.2",desc:"Custom material countertop",unit:"ft run",price:0,poa:true,zone:"Pantry/Kitchen"},
+  ]},
+  {id:11,code:"11",name:"Glazing & Doors",note:"Aluminium window, glass & door works — after 6pm office hours.",noZone:true,items:[
+    {id:"c11.1",desc:"Aluminium glass swing door",unit:"LS",price:430},
+    {id:"c11.2",desc:"Light-duty bifold doors w/ see-through panels, aluminium profile — shopfront",unit:"LS",price:0,poa:true},
+    {id:"c11.3",desc:"Glass fixed panel to half-height partition",unit:"sqft",price:8},
+    {id:"c11.4",desc:"Sliding glass door",unit:"sqft",price:24},
+    {id:"c11.5",desc:"Frameless / framed glass partition",unit:"sqft",price:0,poa:true},
+  ]},
+  {id:12,code:"12",name:"Painting & Wallcover",noZone:true,items:[
+    {id:"c12.1",desc:"Paint affected areas — Nippon Vinilex 5000",unit:"LS",price:0,poa:true},
+    {id:"c12.2",desc:"Oil-based sealer",unit:"LS",price:540},
+    {id:"c12.3",desc:"Wallpaper install (10m H × 1.5m L)",unit:"LS",price:632},
+  ]},
+  {id:13,code:"13",name:"Misc & Signage",noZone:true,items:[
+    {id:"c13.1",desc:"Aluminium 3D box-up signage c/w spray paint + white acrylic frontlit",unit:"LS",price:0,poa:true},
+    {id:"c13.2",desc:"Shopfront display TV (43-inch)",unit:"LS",price:385},
+    {id:"c13.3",desc:"Frosted graphic sticker film for glass facade",unit:"LS",price:0,poa:true},
+    {id:"c13.4",desc:"Loose furniture — bench / chairs",unit:"LS",price:0,poa:true},
+  ]},
+];
+
 const DEFAULT_TRADES=[
   {id:1,code:"01",name:"Design",subheader:"Private Residential Design Fees",noZone:true,items:[
     {id:"1.1",desc:"Design consultation & services",unit:"LS",price:750},
@@ -530,6 +651,16 @@ const DESIGN_ITEMS_CFG=[
   {id:"1.6",desc:"(+) Japandi Style Theme – with ornaments",psfPct:null,fixedPrice:500,addon:true},
   {id:"1.7",desc:"(+) Japandi + Luxury Style Theme – with ornaments",psfPct:null,fixedPrice:1000,addon:true},
 ];
+// COMMERCIAL — lump sum, never PSF (per the commercial rate card: "Design fee = LUMP SUM").
+// 3D rendering has no fixed selling price on file (POA on the rate card) — left at $0 rather
+// than invented; raise it as a custom line on the actual quote once negotiated with the client.
+const COMMERCIAL_DESIGN_ITEMS_CFG=[
+  {id:"c1.1",desc:"Design consultation & services (Material + Colour Co-ordination, Theme + Style Planning)",psfPct:null,fixedPrice:1000},
+  {id:"c1.2",desc:"Spatial planning & layout in 2D (furniture, RCP, lighting plan)",psfPct:null,fixedPrice:500},
+  {id:"c1.3",desc:"3D design rendering + perspective drawing (6-8 views, 3 revisions) — POA, price on client brief",psfPct:null,fixedPrice:0},
+  {id:"c1.4",desc:"Elevation drawings – carpentry (inclusive)",psfPct:null,fixedPrice:0},
+];
+const designItemsCfg=ptype=>ptype==="commercial"?COMMERCIAL_DESIGN_ITEMS_CFG:DESIGN_ITEMS_CFG;
 
 // ── STORAGE ───────────────────────────────────────────────────────────────────
 let CLOUD=[];let CLOUD_READY=false;
@@ -635,12 +766,13 @@ const cloudDelete=async id=>{
     return true;
   }catch(e){console.error("cloudDelete threw",e);setCloudFail(true);return false;}
 };
-const loadTrades=()=>{
+const loadTrades=(ptype)=>{
+  const base=ptype==="commercial"?COMMERCIAL_TRADES:DEFAULT_TRADES;
   try{
     const ov=JSON.parse(localStorage.getItem(RATECARD_KEY)||"null");
-    if(!ov)return DEFAULT_TRADES;
-    return DEFAULT_TRADES.map(t=>({...t,items:t.items.map(i=>{const o=ov[i.id];return o?{...i,...o}:i;})}));
-  }catch{return DEFAULT_TRADES;}
+    if(!ov)return base;
+    return base.map(t=>({...t,items:t.items.map(i=>{const o=ov[i.id];return o?{...i,...o}:i;})}));
+  }catch{return base;}
 };
 const saveTradeOverride=(id,fields)=>{
   try{
@@ -663,7 +795,7 @@ const calcQuoteTotal=q=>{
   }
   // A Sent/Signed quote carries a frozen rate card. Overlay it so the quote is valued
   // at the rates it was ISSUED at — never at rates that changed after the client got it.
-  const liveTR=loadTrades();
+  const liveTR=loadTrades(q.projectType);
   const TR=(q.snapshot&&q.snapshot.items)
     ? liveTR.map(t=>({...t,items:t.items.map(i=>{const sn=q.snapshot.items[i.id];return sn?{...i,desc:sn.desc,price:sn.price,unit:sn.unit}:i;})}))
     : liveTR;
@@ -676,7 +808,7 @@ const calcQuoteTotal=q=>{
   let sum=0;
   // design
   const sqft=q.unitSqft||0;
-  DESIGN_ITEMS_CFG.forEach(i=>{
+  designItemsCfg(q.projectType).forEach(i=>{
     if(!(q.designOn||{})[i.id])return;
     if(i.fixedPrice!==null)sum+=i.fixedPrice;
     else if(i.basis==="raw")sum+=Math.round(sqft*(i.psfPct||0));
@@ -712,7 +844,7 @@ const blankQuote=(base=null,ptype="condo")=>({
   voAdds:[],voOmits:[],voApproved:false,
   qtys:{},itemOn:{},tiers:{},notes:{},zoneOverride:{},dupes:[],customs:[],removalOn:{},
   openTrades:{1:true},openZones:{},
-  payKey:base?"vo100":(base?.payKey||"standard"),customPay:base?.customPay||[],
+  payKey:base?"vo100":(base?.payKey||(ptype==="commercial"?"commercial5":"standard")),customPay:base?.customPay||[],
   disc:"",discOk:false,usePaypal:false,usePaynow:false,
   sig:{clientName:"",date:todayStr(),agreed:false,directorDate:todayStr(),idDate:todayStr(),
     summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",
@@ -813,11 +945,14 @@ const ItemRow=React.memo(function ItemRow({
   isOn,qty,ep,tier,zone,img,isLocked,
   onToggle,onQtyChange,onQtyBlur,onNote,note,onTier,onImg,onApprove,onEditCustom,onUnlockCustom,
   poaUnlocked,poaEdited,poaVal,onPoaUnlock,onPoaChange,poaNeedsApp,poaApproved,editRate,
+  descVal,onDescChange,
   canReorder,onMoveUp,onMoveDown,onMoveZone,onMoveTap,moveZones,
   dragHandlers,dragOver,flash,onDuplicate,
   isVO,isRemoved,onRemove,
 }){
   const lineT=isOn?qty*ep:0;
+  const[revealDesc,setRevealDesc]=useState(false);
+  const[revealPrice,setRevealPrice]=useState(false);
   return(
     <div
       style={{borderBottom:`1px solid #F5F0E8`,background:flash?"#FBE9CE":(!isOn?"#FAF7F2":qty>0?"#FFFDF8":"#fff"),
@@ -840,9 +975,14 @@ const ItemRow=React.memo(function ItemRow({
             {isCustom&&<span style={{background:C.terraPale,color:C.terra,borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>CUSTOM</span>}
             {isCustom&&customObj&&!customObj.approved&&<span style={{background:"#FFF3E0",color:"#E65100",borderRadius:2,padding:"0 4px",fontSize:9,fontWeight:700,marginRight:4}}>PENDING</span>}
             {isCustom&&customObj&&!customObj.approved&&!isLocked&&onEditCustom&&<span onClick={()=>onEditCustom(customObj)} title="Edit while Pending" style={{fontSize:10,color:C.gold,cursor:"pointer",marginRight:4,opacity:0.75}}>✎</span>}
-            {isCustom&&customObj&&customObj.approved&&!isLocked&&USER_ROLE>=ROLES.director&&onUnlockCustom&&<span onClick={()=>onUnlockCustom(customObj)} title="Director PIN unlock" style={{fontSize:10,color:C.stone,cursor:"pointer",marginRight:4}}>🔓</span>}
+            {isCustom&&customObj&&customObj.approved&&!isLocked&&USER_ROLE>=ROLES.senior&&onUnlockCustom&&<span onClick={()=>onUnlockCustom(customObj)} title="Senior/Director PIN unlock" style={{fontSize:10,color:C.stone,cursor:"pointer",marginRight:4}}>🔓</span>}
             {isRemoved&&<span style={{background:"#8B3A3A22",color:"#8B3A3A",border:"1px solid #8B3A3A44",borderRadius:2,padding:"0 5px",fontSize:9,fontWeight:700,marginLeft:4}}>REMOVED</span>}
-            {item.desc}
+            {!isCustom&&!isLocked&&onDescChange&&<span onClick={()=>setRevealDesc(v=>!v)} title="Edit description — needs senior/director approval to print" style={{fontSize:10,color:C.gold,cursor:"pointer",marginRight:4,opacity:0.75}}>✎</span>}
+            {isCustom?null:(revealDesc?(
+              <input type="text" autoFocus value={descVal!==undefined&&descVal!==null?descVal:item.desc}
+                onChange={e=>onDescChange(e.target.value)} onBlur={()=>setRevealDesc(false)}
+                style={{width:"100%",border:`1px solid ${C.gold}`,borderRadius:2,padding:"2px 5px",fontSize:14,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
+            ):(descVal!==undefined&&descVal!==null&&descVal!==""?descVal:item.desc))}
           </div>
           {isVO&&isOn&&!isDupe&&!isCustom&&(
             <button onClick={e=>{e.stopPropagation();onRemove();}}
@@ -869,7 +1009,7 @@ const ItemRow=React.memo(function ItemRow({
               style={{width:"100%",marginTop:4,border:`1px solid ${C.border}`,borderRadius:2,padding:"4px 7px",fontSize:11,fontFamily:T.sans,background:"#FAFAF8",color:C.stone,boxSizing:"border-box",resize:"vertical",minHeight:28,lineHeight:1.5,display:"block"}}
             />
           )}
-          {isCustom&&customObj&&!customObj.approved&&USER_ROLE>=ROLES.director&&(
+          {isCustom&&customObj&&!customObj.approved&&USER_ROLE>=ROLES.senior&&(
             <button onClick={onApprove}
               style={{marginTop:3,background:C.gold,color:C.ink,border:"none",borderRadius:2,padding:"2px 8px",fontSize:9,cursor:"pointer",fontFamily:T.sans}}>Approve</button>
           )}
@@ -907,12 +1047,13 @@ const ItemRow=React.memo(function ItemRow({
               value={poaVal!==undefined&&poaVal!==null&&poaVal!==""?poaVal:String(item.price)}
               onChange={e=>{const v=e.target.value;if(/^\d*\.?\d{0,2}$/.test(v)||v==="")onPoaChange(v);}}
               style={{width:74,border:`1px solid ${C.gold}`,borderRadius:3,padding:"3px 5px",fontSize:13,fontFamily:T.serif,textAlign:"right",background:C.cream,color:C.ink}}/>
-          ):(item.poa||poaEdited||ep<=0)?(
+          ):(item.poa||poaEdited||ep<=0||revealPrice)?(
             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
-              <input type="text" inputMode="decimal" disabled={isLocked}
+              <input type="text" inputMode="decimal" disabled={isLocked} autoFocus={revealPrice&&!item.poa&&!poaEdited&&ep>0}
                 value={poaVal!==undefined&&poaVal!==null?poaVal:""}
-                placeholder="POA"
+                placeholder={item.poa||ep<=0?"POA":String(ep)}
                 onChange={e=>{const v=e.target.value;if(/^\d*\.?\d{0,2}$/.test(v)||v==="")onPoaChange(v);}}
+                onBlur={()=>setRevealPrice(false)}
                 style={{width:74,border:`1px solid ${poaNeedsApp?C.stone:(poaApproved?C.success:C.gold)}`,borderRadius:3,padding:"3px 5px",fontSize:13,textAlign:"right",fontFamily:T.serif,background:poaNeedsApp?"#EDEAE5":C.cream,color:poaNeedsApp?C.stone:C.ink,opacity:poaNeedsApp?0.75:1}}/>
               {poaNeedsApp?(
                 <span onClick={()=>!isLocked&&onPoaUnlock()} title="Needs senior/director approval to print"
@@ -922,7 +1063,10 @@ const ItemRow=React.memo(function ItemRow({
               ):null}
             </div>
           ):(
-            ep>0?fmt(ep):<span style={{color:C.gold,fontSize:13}}>POA</span>
+            <span style={{display:"inline-flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}>
+              {!isLocked&&<span onClick={()=>setRevealPrice(true)} title="Edit price — needs senior/director approval to print" style={{fontSize:10,color:C.gold,cursor:"pointer",opacity:0.6}}>✎</span>}
+              {ep>0?fmt(ep):<span style={{color:C.gold,fontSize:13}}>POA</span>}
+            </span>
           )}
         </div>
         {/* IMG */}
@@ -1422,16 +1566,16 @@ function QuoteBuilder({initData,onSave,onBack}){
   // so every code path — totals, print rows, the quote list — reads the frozen values with
   // no further change. Draft = live rates. Sent/Signed = frozen.
   const TRADES=useMemo(()=>{
-    const live=loadTrades();
+    const live=loadTrades(projectType);
     if(!snapshot||!snapshot.items)return live;
     return live.map(t=>({...t,items:t.items.map(i=>{
       const sn=snapshot.items[i.id];
       return sn?{...i,desc:sn.desc,price:sn.price,unit:sn.unit}:i;
     })}));
-  },[snapshot]);
+  },[snapshot,projectType]);
   // Build the snapshot from the CURRENT rate card. Called at the moment a quote is Sent.
   const buildSnapshot=()=>{
-    const live=loadTrades();
+    const live=loadTrades(projectType);
     const items={};
     live.forEach(t=>t.items.forEach(i=>{items[i.id]={desc:i.desc,price:i.price,unit:i.unit};}));
     return{items,designPsf:DESIGN_PSF_RATE,at:Date.now()};
@@ -1439,12 +1583,12 @@ function QuoteBuilder({initData,onSave,onBack}){
   // Has the rate card moved since this quote was issued?
   const ratesMoved=useMemo(()=>{
     if(!snapshot||!snapshot.items)return false;
-    const live=loadTrades();
+    const live=loadTrades(projectType);
     return live.some(t=>t.items.some(i=>{
       const sn=snapshot.items[i.id];
       return sn&&(sn.price!==i.price||sn.desc!==i.desc||sn.unit!==i.unit);
     }));
-  },[snapshot]);
+  },[snapshot,projectType]);
   const[step,setStep]=useState("quote");
   const[tab,setTab]=useState("summary");
   const[quoteName,setQuoteName]=useState(initData.name||"New Quote");
@@ -1517,6 +1661,12 @@ function QuoteBuilder({initData,onSave,onBack}){
   const[printPin,setPrintPin]=useState("");
   const[poaPrices,setPoaPricesRaw]=useState(initData.poaPrices||{});
   const setPoaPrices=(...a)=>{if(!markRevised())return;setPoaPricesRaw(...a);};
+  // Description override on ANY catalogue item — every line is now manually editable, not just
+  // POA-flagged ones. Shares the same pending/approve gate as a manual price change.
+  const[descOverride,setDescOverrideRaw]=useState(initData.descOverride||{});
+  const setDescOverride=(...a)=>{if(!markRevised())return;setDescOverrideRaw(...a);};
+  const effDesc=item=>(descOverride[item.id]!==undefined&&descOverride[item.id]!==null&&descOverride[item.id]!==""?descOverride[item.id]:item.desc);
+  const isDescEdited=id=>{const v=descOverride[id];return v!==undefined&&v!==null&&v!=="";};
   const[poaUnlocked,setPoaUnlocked]=useState(true);// POA fields are always editable now; approval is the gate
   const[poaApproved,setPoaApproved]=useState(initData.poaApproved||{});// {itemId:true} once senior/director approves
   const[poaPinPrompt,setPoaPinPrompt]=useState(null);
@@ -1664,7 +1814,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   const getZone=item=>zoneOverride[item.id]||item.zone||"Whole House";
   const getTier=id=>tiers[id]||"base";
   const getEP=item=>{const manual=poaPrices[item.id];if(manual!==undefined&&manual!==null&&manual!=="")return parseFloat(manual)||0;const t=getTier(item.id);if(!item.carpentry||t==="base")return item.price;return Math.round(item.price*FINISH[t].mult*100)/100;};
-  const isPoaEdited=id=>{const v=poaPrices[id];return v!==undefined&&v!==null&&v!=="";};
+  const isPoaEdited=id=>{const v=poaPrices[id];return v!==undefined&&v!==null&&v!==""||isDescEdited(id);};
   const isPoaApproved=id=>poaApproved[id]===true;
   // Trades flagged editRate (Miscellaneous) are freely adjustable by any designer —
   // a keyed rate there is NOT a POA and never needs approval.
@@ -1672,7 +1822,12 @@ function QuoteBuilder({initData,onSave,onBack}){
   // A line needs approval if it has a manually-keyed POA price that is not yet approved.
   const poaNeedsApproval=id=>!FREE_RATE_IDS.has(id)&&isPoaEdited(id)&&!isPoaApproved(id);
   const approvePoaPin=()=>{if(poaPinBuf===DIRECTOR_PIN){if(poaPinPrompt)setPoaApproved(a=>({...a,[poaPinPrompt]:true}));setPoaPinBuf("");setPoaPinPrompt(null);}else{alert("Incorrect Director PIN");}};
-  const requestPoaApproval=id=>setPoaPinPrompt(id);
+  const requestPoaApproval=id=>{
+    // Senior or director approves outright, same as they already can on a custom line —
+    // the PIN is only the fallback path for a staff member with someone senior standing by.
+    if(USER_ROLE>=ROLES.senior){setPoaApproved(a=>({...a,[id]:true}));return;}
+    setPoaPinPrompt(id);
+  };
   const tryPoaPin=()=>{if(poaPinBuf===DIRECTOR_PIN){setPoaUnlocked(true);setPoaPinBuf("");}else{alert("Incorrect Director PIN");}};
   const zK=(tid,z)=>`${tid}-${z}`;
   const isZO=(tid,z)=>openZones[zK(tid,z)]!==false;
@@ -1686,14 +1841,14 @@ function QuoteBuilder({initData,onSave,onBack}){
       onSave(data);
     },1500);
     return()=>clearTimeout(saveTimerRef.current);
-  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,poaApproved,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,snapshot]);
+  },[quoteName,projectName,entity,client,idStaff,status,projectType,unitSqft,designOn,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,voAdds,voOmits,voApproved,revised,poaPrices,descOverride,poaApproved,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,snapshot]);
 
   const buildSaveData=()=>({
     id:initData.id,name:quoteName,projectName,updatedAt:todayStr(),createdAt:initData.createdAt||todayStr(),
     _lock:myLockRef.current,// carry the held lock forward — without this, every 1.5s autosave silently erases it
     entity,status,projectType,unitSqft,designOn,client,idStaff,qtys,itemOn,tiers,notes,zoneOverride,dupes,customs,removalOn,
     isVO,voNumber,parentId:initData.parentId||null,parentRef,parentTotal,voAdds,voOmits,voApproved,revised,
-    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved,
+    openTrades,openZones,payKey,customPay,disc,discOk,usePaypal,usePaynow,sig,poaPrices,descOverride,extraZones,shownZones,zoneNames,itemSeq,pendingApprovals,poaApproved,
     snapshot
   });
   const[issuing,setIssuing]=useState(false);
@@ -1833,7 +1988,7 @@ function QuoteBuilder({initData,onSave,onBack}){
     if(isLocked)return;
     if(!markRevised())return;            // ask ONCE — this used to prompt THREE times
     const nid=`dupe-${item.id}-${Date.now()}${Math.random().toString(36).slice(2,6)}`;
-    setDupesRaw(d=>[...d,{id:nid,srcId:item.srcId||item.id,tradeId:trade.id,zone,desc:item.desc,unit:item.unit,price:item.srcId?item.price:getEP(item),carpentry:item.carpentry,addon:item.addon,poa:item.poa}]);
+    setDupesRaw(d=>[...d,{id:nid,srcId:item.srcId||item.id,tradeId:trade.id,zone,desc:effDesc(item),unit:item.unit,price:item.srcId?item.price:getEP(item),carpentry:item.carpentry,addon:item.addon,poa:item.poa}]);
     setItemOnRaw(o=>({...o,[nid]:true}));
     setQtysRaw(q=>({...q,[nid]:parseFloat(qtys[item.id])||1}));
     setOpenTrades(o=>({...o,[trade.id]:true}));setOpenZones(o=>({...o,[zK(trade.id,zone)]:true}));
@@ -1885,7 +2040,7 @@ function QuoteBuilder({initData,onSave,onBack}){
   };
   const designCustoms=useMemo(()=>customs.filter(c=>c.tradeId===1),[customs]);
   const designCustomSub=useMemo(()=>designCustoms.filter(c=>c.approved&&isOn(c.id)).reduce((s,c)=>s+(parseFloat(qtys[c.id])||1)*c.price,0),[designCustoms,itemOn,qtys]);
-  const designSubtotal=useMemo(()=>DESIGN_ITEMS_CFG.reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0)+designCustomSub,[designOn,unitSqft,projectType,designCustomSub,effDesignPsf]);
+  const designSubtotal=useMemo(()=>designItemsCfg(projectType).reduce((s,item)=>designOn[item.id]?s+getDesignPrice(item):s,0)+designCustomSub,[designOn,unitSqft,projectType,designCustomSub,effDesignPsf]);
   const subtotal=isVO?voNet:(designSubtotal+tradeSubs.reduce((s,t)=>s+t.sub,0));
   const discAmt=discOk?Math.min(Math.max(parseFloat(disc)||0,0),subtotal):0;
   const afterDisc=subtotal-discAmt;
@@ -2090,7 +2245,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               setStep("quote");
             }}
             style={{background:"transparent",color:"#fff",border:"1px solid #fff",borderRadius:3,padding:"4px 12px",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>Show me</button>
-          {USER_ROLE>=ROLES.director&&!isFullyLocked&&customs.some(c=>!c.approved&&isOn(c.id))&&(
+          {USER_ROLE>=ROLES.senior&&!isFullyLocked&&customs.some(c=>!c.approved&&isOn(c.id))&&(
             <button onClick={()=>{
                 const n=customs.filter(c=>!c.approved&&isOn(c.id));
                 if(!window.confirm(`Approve ${n.length} custom line${n.length>1?"s":""}?\n\n  ·  ${n.map(c=>`${c.desc} — ${fmt(c.price)}`).join("\n  ·  ")}\n\nThey will be added to the quote total.`))return;
@@ -2373,20 +2528,23 @@ function QuoteBuilder({initData,onSave,onBack}){
           {voApproved?(
             <div style={{display:"flex",alignItems:"center",gap:9}}>
               <span style={{color:C.success,fontSize:16}}>✓</span>
-              <span style={{fontSize:12,color:C.success,fontFamily:T.sans}}>Approved by Director. This VO may now be sent to the client.</span>
+              <span style={{fontSize:12,color:C.success,fontFamily:T.sans}}>Approved by Senior/Director. This VO may now be sent to the client.</span>
               {!isFullyLocked&&<button onClick={()=>setVoApproved(false)} style={{marginLeft:"auto",background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:10,fontFamily:T.sans,textDecoration:"underline"}}>Revoke</button>}
             </div>
           ):(
             <div>
-              <div style={{fontSize:12,color:C.terra,fontFamily:T.sans,fontWeight:700,marginBottom:3}}>Director approval required</div>
-              <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginBottom:10}}>Every Variation Order must be approved by a Director before it can be marked Sent or reach the client.</div>
-              {showVoPin?(
+              <div style={{fontSize:12,color:C.terra,fontFamily:T.sans,fontWeight:700,marginBottom:3}}>Senior/Director approval required</div>
+              <div style={{fontSize:11,color:C.stone,fontFamily:T.sans,marginBottom:10}}>Every Variation Order must be approved by a Senior designer or Director before it can be marked Sent or reach the client.</div>
+              {USER_ROLE>=ROLES.senior?(
+                <button onClick={()=>setVoApproved(true)}
+                  style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"7px 14px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>Approve VO</button>
+              ):showVoPin?(
                 <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
                   <input type="password" autoFocus value={voPinBuf} onChange={e=>setVoPinBuf(e.target.value)}
-                    onKeyDown={e=>{if(e.key==="Enter"){if(voPinBuf===DIRECTOR_PIN){setVoApproved(true);setVoPinBuf("");setShowVoPin(false);}else alert("Incorrect Director PIN");}}}
-                    placeholder="Director PIN"
+                    onKeyDown={e=>{if(e.key==="Enter"){if(voPinBuf===DIRECTOR_PIN){setVoApproved(true);setVoPinBuf("");setShowVoPin(false);}else alert("Incorrect PIN");}}}
+                    placeholder="Senior/Director PIN"
                     style={{width:120,border:`1px solid ${C.border}`,borderRadius:3,padding:"7px 9px",fontSize:12,fontFamily:T.sans}}/>
-                  <button onClick={()=>{if(voPinBuf===DIRECTOR_PIN){setVoApproved(true);setVoPinBuf("");setShowVoPin(false);}else alert("Incorrect Director PIN");}}
+                  <button onClick={()=>{if(voPinBuf===DIRECTOR_PIN){setVoApproved(true);setVoPinBuf("");setShowVoPin(false);}else alert("Incorrect PIN");}}
                     style={{background:C.gold,color:C.ink,border:"none",borderRadius:3,padding:"7px 14px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:T.sans}}>Approve VO</button>
                   <button onClick={()=>{setShowVoPin(false);setVoPinBuf("");}} style={{background:"transparent",border:"none",color:C.stone,cursor:"pointer",fontSize:11,fontFamily:T.sans}}>Cancel</button>
                 </div>
@@ -2404,7 +2562,7 @@ function QuoteBuilder({initData,onSave,onBack}){
         <div className="no-print trade-nav" style={{position:"sticky",top:topbarH,zIndex:55,display:"flex",flexWrap:"nowrap",overflowX:"auto",gap:4,background:C.white,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 9px",marginBottom:10,boxShadow:"0 1px 6px rgba(0,0,0,0.05)",WebkitOverflowScrolling:"touch"}}>
           <span style={{fontSize:9,letterSpacing:1,color:C.stone,fontWeight:700,fontFamily:T.sans,alignSelf:"center",marginRight:8,flex:"0 0 auto",whiteSpace:"nowrap"}}>TRADE</span>
           {[{id:1,code:"01",name:"Design"},...TRADES.filter(t=>t.id!==1).map(t=>({id:t.id,code:t.code,name:t.name}))].map(t=>{
-            const on=t.id===1?DESIGN_ITEMS_CFG.some(i=>designOn[i.id]):(TRADES.find(x=>x.id===t.id)&&tradeOn(TRADES.find(x=>x.id===t.id)));
+            const on=t.id===1?designItemsCfg(projectType).some(i=>designOn[i.id]):(TRADES.find(x=>x.id===t.id)&&tradeOn(TRADES.find(x=>x.id===t.id)));
             return(
               <button key={t.id} title={t.name}
                 onClick={()=>{setOpenTrades(o=>({...o,[t.id]:true}));setTimeout(()=>{const el=document.getElementById(`trade-anchor-${t.id}`);if(el){const navEl=document.querySelector(".trade-nav");const off=topbarH+(navEl?navEl.offsetHeight:44)+12;const y=el.getBoundingClientRect().top+window.pageYOffset-off;window.scrollTo({top:y,behavior:"smooth"});}},60);}}
@@ -2489,9 +2647,9 @@ function QuoteBuilder({initData,onSave,onBack}){
                     {v.label}{v.minRole>=2&&<span style={{fontSize:8,color:C.terra,marginLeft:3}}>★</span>}
                   </button>
                 ))}
-                {USER_ROLE>=ROLES.director&&<button onClick={()=>{setPayKey("custom");setShowCPay(true);}} style={{background:payKey==="custom"?C.ink:C.creamD,color:payKey==="custom"?C.gold:C.stone,border:`1px solid ${payKey==="custom"?C.gold:C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>Custom ★</button>}
+                {USER_ROLE>=ROLES.senior&&<button onClick={()=>{setPayKey("custom");setShowCPay(true);}} style={{background:payKey==="custom"?C.ink:C.creamD,color:payKey==="custom"?C.gold:C.stone,border:`1px solid ${payKey==="custom"?C.gold:C.border}`,borderRadius:3,padding:"5px 10px",fontSize:10,cursor:"pointer",fontFamily:T.sans,fontWeight:600}}>Custom ★</button>}
               </div>
-              {showCPay&&USER_ROLE>=ROLES.director&&(
+              {showCPay&&USER_ROLE>=ROLES.senior&&(
                 <div style={{background:C.creamW,border:`1px solid ${C.border}`,borderRadius:3,padding:"10px",marginTop:6}}>
                   {customPay.map((p,i)=>(
                     <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
@@ -2521,14 +2679,14 @@ function QuoteBuilder({initData,onSave,onBack}){
         {/* DESIGN TRADE 01 */}
         {(()=>{
           const psfPool=unitSqft*effDesignPsf;
-          const anyOn=DESIGN_ITEMS_CFG.some(i=>designOn[i.id]);
+          const anyOn=designItemsCfg(projectType).some(i=>designOn[i.id]);
           const tOpen=openTrades[1]!==false;
           return(
             <div id="trade-anchor-1" style={card}>
               <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white,cursor:"pointer"}} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}>
                 <div style={{display:"flex",alignItems:"center",gap:7}}>
                   <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}/>
-                  <Toggle on={anyOn} small disabled={isLocked} onClick={()=>{if(isLocked)return;const ns={};DESIGN_ITEMS_CFG.forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
+                  <Toggle on={anyOn} small disabled={isLocked} onClick={()=>{if(isLocked)return;const ns={};designItemsCfg(projectType).forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
                   <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>01</span>
                   <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>Interior Design & Consultation</span>
                   <span style={{fontSize:10,color:C.stone}}>— PSF-based fees</span>
@@ -2556,7 +2714,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                       <div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1.2,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>
                     ))}
                   </div></div>
-                  {DESIGN_ITEMS_CFG.map(item=>{
+                  {designItemsCfg(projectType).map(item=>{
                     const on=!!designOn[item.id];
                     const price=item.fixedPrice!==null?item.fixedPrice:(item.basis==="raw"?Math.round(unitSqft*(item.psfPct||0)):Math.round(psfPool*(item.psfPct||0)));
                     return(
@@ -2605,12 +2763,12 @@ function QuoteBuilder({initData,onSave,onBack}){
                           {c.approved
                             ?(!isLocked
                                 ?<span style={{fontSize:12,fontFamily:T.serif,display:"flex",alignItems:"center",gap:5,justifyContent:"flex-end"}}>{fmt(c.price)}
-                                    {USER_ROLE>=ROLES.director&&<span onClick={()=>unlockCustom(c)} title="Director PIN unlock" style={{fontSize:9,color:C.stone,cursor:"pointer"}}>🔓</span>}
+                                    {USER_ROLE>=ROLES.senior&&<span onClick={()=>unlockCustom(c)} title="Senior/Director PIN unlock" style={{fontSize:9,color:C.stone,cursor:"pointer"}}>🔓</span>}
                                   </span>
                                 :<span style={{fontSize:12,fontFamily:T.serif}}>{fmt(c.price)}</span>)
                             :!isLocked
-                              ?<Btn ch={USER_ROLE>=ROLES.director?"Approve":"🔒 Approve"} onClick={()=>{
-                                  if(USER_ROLE<ROLES.director&&window.prompt("Director PIN to approve this custom line:")!==DIRECTOR_PIN){alert("Incorrect Director PIN.");return;}
+                              ?<Btn ch={USER_ROLE>=ROLES.senior?"Approve":"🔒 Approve"} onClick={()=>{
+                                  if(USER_ROLE<ROLES.senior&&window.prompt("Senior/Director PIN to approve this custom line:")!==DIRECTOR_PIN){alert("Incorrect PIN.");return;}
                                   setCustoms(x=>x.map(y=>y.id===c.id?{...y,approved:true}:y));
                                 }} bg={C.gold} col={C.ink} sm/>
                               :<span style={{fontSize:10,color:C.stone}}>Awaiting director</span>}
@@ -2709,6 +2867,8 @@ function QuoteBuilder({initData,onSave,onBack}){
                         onPoaChange={v=>setPoaPrices(p=>({...p,[item.id]:v}))}
                         poaNeedsApp={poaNeedsApproval(item.id)}
                         poaApproved={isPoaApproved(item.id)}
+                        descVal={descOverride[item.id]}
+                        onDescChange={v=>setDescOverride(d=>({...d,[item.id]:v}))}
                         editRate={!!trade.editRate}
                         dragHandlers={pointerDragHandlers(item,trade)}
                         onMoveTap={!trade.noZone&&isOn(item.id)&&!isLocked?(it=>setMovePicker({id:it.id,tradeId:trade.id,current:getZone(it)})):undefined}
@@ -2794,6 +2954,8 @@ function QuoteBuilder({initData,onSave,onBack}){
                               onPoaChange={v=>setPoaPrices(p=>({...p,[item.id]:v}))}
                               poaNeedsApp={poaNeedsApproval(item.id)}
                               poaApproved={isPoaApproved(item.id)}
+                              descVal={descOverride[item.id]}
+                              onDescChange={v=>setDescOverride(d=>({...d,[item.id]:v}))}
                               dragHandlers={!item.srcId?pointerDragHandlers(item,trade):pointerDragHandlers(item,trade)}
                               onMoveTap={!trade.noZone&&isOn(item.id)&&!isLocked?(it=>setMovePicker({id:it.id,tradeId:trade.id,current:getZone(it)})):undefined}
                               dragOver={isDropTarget&&dragId!==item.id}
@@ -2867,7 +3029,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                   </div>
                 ):(
                   <div style={{padding:"6px 14px",borderTop:`1px solid ${C.creamD}`,display:"flex",gap:8,flexWrap:"wrap"}}>
-                    <button onClick={()=>setCustomForm({tradeId:trade.id,desc:"",unit:"LS",zone:"Whole House",price:"",qty:1})}
+                    <button onClick={()=>setCustomForm({tradeId:trade.id,desc:"",unit:"LS",zone:(trade.zones||zoneList)[0]||"Whole House",price:"",qty:1})}
                       style={{background:C.gold,border:`1px solid ${C.gold}`,borderRadius:16,color:C.ink,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:T.sans,padding:"5px 16px",letterSpacing:0.3}}>
                       + Add item
                     </button>
@@ -3346,7 +3508,6 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
           </div>
           {(()=>{
-            let itemNo=0;
             return [...TRADES.map(trade=>{
               const tSub=tradeSubs.find(t=>t.id===trade.id)?.sub||0;
               if(trade.id===1&&designSubtotal===0)return null;
@@ -3355,7 +3516,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               // mirroring the tradeSubs math so no selected line is dropped from print.
               let rows;
               if(trade.id===1){
-                rows=[...DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>({
+                rows=[...designItemsCfg(projectType).filter(i=>designOn[i.id]).map(i=>({
                   id:i.id,desc:i.desc,qty:"1",unit:"LS",note:"",
                   amount:getDesignPrice(i)})),
                   ...designCustoms.filter(c=>c.approved&&isOn(c.id)).map(c=>({
@@ -3363,7 +3524,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                     amount:(parseFloat(qtys[c.id])||1)*c.price}))];
               }else{
                 const base=trade.items.filter(i=>isOn(i.id)&&(parseFloat(qtys[i.id])||0)>0&&!poaNeedsApproval(i.id)).map(i=>({
-                  id:i.id,desc:i.desc,qty:parseFloat(qtys[i.id])||0,unit:i.unit,note:notes[i.id]||"",
+                  id:i.id,desc:effDesc(i),qty:parseFloat(qtys[i.id])||0,unit:i.unit,note:notes[i.id]||"",
                   amount:(parseFloat(qtys[i.id])||0)*getEP(i)}));
                 const dup=dupes.filter(d=>d.tradeId===trade.id&&isOn(d.id)&&(parseFloat(qtys[d.id])||0)>0&&!poaNeedsApproval(d.id)).map(d=>({
                   id:d.id,desc:d.desc,qty:parseFloat(qtys[d.id])||0,unit:d.unit||"LS",note:notes[d.id]||"",
@@ -3374,6 +3535,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 rows=[...base,...dup,...cus];
               }
               if(!rows.length)return null;
+              rows=seqSort(rows);// number in the order items were actually selected, not catalog order
               return(
                 <div key={trade.id} style={{background:C.white,borderRadius:4,border:`1px solid ${C.border}`,marginBottom:6,overflow:"hidden"}}>
                   <div style={{padding:"8px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",background:C.creamD}}>
@@ -3386,8 +3548,11 @@ function QuoteBuilder({initData,onSave,onBack}){
                   <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",background:"#F5F0E8",padding:"4px 16px"}}>
                     {["#","DESCRIPTION","QTY","UNIT","AMOUNT"].map((h,i)=><div key={i} style={{fontSize:9,fontWeight:600,letterSpacing:1,color:C.stone,textAlign:i>2?"right":"left"}}>{h}</div>)}
                   </div>
-                  {rows.map(r=>{
-                    itemNo++;
+                  {rows.map((r,i)=>{
+                    // Numbered per trade — <trade>.<running position>, e.g. Design's third
+                    // selected line is 1.3 — resets at every trade section rather than
+                    // running as one long count across the whole quote.
+                    const itemNo=`${trade.id}.${i+1}`;
                     return(<div key={r.id} style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 70px 90px",padding:"7px 16px",borderBottom:`1px solid #F5F0E8`,alignItems:"start"}}>
                       <div style={{fontSize:10,color:C.stone,fontFamily:T.sans}}>{itemNo}</div>
                       <div>
@@ -3480,7 +3645,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                 <div style={{fontSize:10,color:C.stone}}>01</div>
                 <div>
                   <div style={{fontSize:13}}>Interior Design & Consultation</div>
-                  <div style={{fontSize:10,color:C.stone,marginTop:2}}>{DESIGN_ITEMS_CFG.filter(i=>designOn[i.id]).map(i=>notes[i.id]?`${i.desc} — ${notes[i.id]}`:i.desc).join(" · ")}</div>
+                  <div style={{fontSize:10,color:C.stone,marginTop:2}}>{designItemsCfg(projectType).filter(i=>designOn[i.id]).map(i=>notes[i.id]?`${i.desc} — ${notes[i.id]}`:i.desc).join(" · ")}</div>
                 </div>
                 <div style={{fontFamily:T.serif,fontSize:14,textAlign:"right"}}>{fmt(designSubtotal)}</div>
               </div>
@@ -3497,7 +3662,7 @@ function QuoteBuilder({initData,onSave,onBack}){
             </div>
             {/* GOODWILL DISCOUNT — director-only control, lives here on the summary.
                 Toggle OFF = line hides entirely from the client-facing quote and print. */}
-            {(USER_ROLE>=ROLES.director&&!isFullyLocked)?(
+            {(USER_ROLE>=ROLES.senior&&!isFullyLocked)?(
               <div className="no-print" style={{padding:"9px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px",alignItems:"center",background:discOk?"#F3F9F4":C.creamW}}>
                 <div/>
                 <div style={{display:"flex",alignItems:"center",gap:9,flexWrap:"wrap"}}>
@@ -3511,7 +3676,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               </div>
             ):null}
             {/* Printed / client-facing line — only when switched on */}
-            {discAmt>0&&<div className="print-only-disc" style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:(USER_ROLE>=ROLES.director&&!isFullyLocked)?"none":"grid",gridTemplateColumns:"44px 1fr 130px"}}>
+            {discAmt>0&&<div className="print-only-disc" style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:(USER_ROLE>=ROLES.senior&&!isFullyLocked)?"none":"grid",gridTemplateColumns:"44px 1fr 130px"}}>
               <div/><div style={{fontSize:12,color:C.success}}>Goodwill Discount</div><div style={{fontFamily:T.serif,fontSize:14,textAlign:"right",color:C.success}}>({fmt(discAmt)})</div>
             </div>}
             {gst&&<div style={{padding:"8px 20px",borderBottom:`1px solid #F5F0E8`,display:"grid",gridTemplateColumns:"44px 1fr 130px"}}>
