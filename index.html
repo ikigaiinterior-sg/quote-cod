@@ -212,8 +212,23 @@ const PROJECT_TYPES={
   // FNB1/Office/Retail quotes) — replaces the earlier placeholder list.
   commercial:{key:"commercial",label:"Commercial",feeBasis:"lump",psfRate:0,lumpSum:0,
     zones:["Shopfront/Facade","Reception","General Office Area","Director/CEO Office","Meeting/Conference","Open Workstation","Pantry/Kitchen","Store","Server/IT","Toilets","Corridor","Retail Floor","Dining Area (F&B)","Kitchen/Prep (F&B)","Whole Unit"],},
+  // Same trade catalogue, prices, and payment schedule as general Commercial — see
+  // isCommercialType() below. Only the zone list (and this note) differ per genre, so the
+  // working page shows a curated, relevant set of rooms instead of the full generic list.
+  commercial_office:{key:"commercial_office",label:"Commercial — Office",feeBasis:"lump",psfRate:0,lumpSum:0,
+    note:"Office fit-out. Heavy/noisy works after 6pm office hours — building management requirement.",
+    zones:["Reception","General Office Area","Director/CEO Office","Meeting/Conference","Open Workstation","Pantry/Kitchen","Store","Server/IT","Toilets","Corridor","Whole Unit"],},
+  commercial_fnb:{key:"commercial_fnb",label:"Commercial — F&B",feeBasis:"lump",psfRate:0,lumpSum:0,
+    note:"F&B fit-out. Confirm mall/landlord fit-out hours and grease-trap/exhaust requirements separately from the standard Demolition SOP window.",
+    zones:["Shopfront/Facade","Dining Area (F&B)","Kitchen/Prep (F&B)","Pantry/Kitchen","Store","Toilets","Corridor","Whole Unit"],},
+  commercial_retail:{key:"commercial_retail",label:"Commercial — Retail",feeBasis:"lump",psfRate:0,lumpSum:0,
+    note:"Retail fit-out. Confirm mall/landlord fit-out hours and shopfront signage approval separately.",
+    zones:["Shopfront/Facade","Retail Floor","Store","Server/IT","Toilets","Corridor","Whole Unit"],},
 };
 const PT=k=>PROJECT_TYPES[k]||PROJECT_TYPES.condo;
+// General Commercial + the three genre-specific variants all share one trade catalogue, one
+// design-fee structure, and one payment schedule — only zones/notes differ between them.
+const isCommercialType=k=>k==="commercial"||k==="commercial_office"||k==="commercial_fnb"||k==="commercial_retail";
 const UNIT_OPTIONS=["no.","LS","sqft","ft run","pfr","M","sqm","set","Trip","Roll","Lot","Pc","Unit","m run","PFR","Room","Other"];
 const ENTITIES=[{id:"ikigai",label:"Ikigai Interior Pte Ltd",legal:"IKIGAI INTERIOR PTE LTD",uen:"202041797K",gstReg:"202041797K",sub:"GST Registered · UEN 202041797K",gst:true},{id:"atelier",label:"Ikigai Design Atelier Pte Ltd",legal:"IKIGAI DESIGN ATELIER PTE LTD",uen:"202606425G",gstReg:null,sub:"Non-GST · UEN 202606425G",gst:false}];
 const entReg=e=>e.gstReg?`UEN ${e.uen} · GST Reg ${e.gstReg}`:`UEN ${e.uen}`;
@@ -660,7 +675,7 @@ const COMMERCIAL_DESIGN_ITEMS_CFG=[
   {id:"c1.3",desc:"3D design rendering + perspective drawing (6-8 views, 3 revisions) — POA, price on client brief",psfPct:null,fixedPrice:0},
   {id:"c1.4",desc:"Elevation drawings – carpentry (inclusive)",psfPct:null,fixedPrice:0},
 ];
-const designItemsCfg=ptype=>ptype==="commercial"?COMMERCIAL_DESIGN_ITEMS_CFG:DESIGN_ITEMS_CFG;
+const designItemsCfg=ptype=>isCommercialType(ptype)?COMMERCIAL_DESIGN_ITEMS_CFG:DESIGN_ITEMS_CFG;
 
 // ── STORAGE ───────────────────────────────────────────────────────────────────
 let CLOUD=[];let CLOUD_READY=false;
@@ -767,7 +782,7 @@ const cloudDelete=async id=>{
   }catch(e){console.error("cloudDelete threw",e);setCloudFail(true);return false;}
 };
 const loadTrades=(ptype)=>{
-  const base=ptype==="commercial"?COMMERCIAL_TRADES:DEFAULT_TRADES;
+  const base=isCommercialType(ptype)?COMMERCIAL_TRADES:DEFAULT_TRADES;
   try{
     const ov=JSON.parse(localStorage.getItem(RATECARD_KEY)||"null");
     if(!ov)return base;
@@ -844,7 +859,7 @@ const blankQuote=(base=null,ptype="condo")=>({
   voAdds:[],voOmits:[],voApproved:false,
   qtys:{},itemOn:{},tiers:{},notes:{},zoneOverride:{},dupes:[],customs:[],removalOn:{},
   openTrades:{1:true},openZones:{},
-  payKey:base?"vo100":(base?.payKey||(ptype==="commercial"?"commercial5":"standard")),customPay:base?.customPay||[],
+  payKey:base?"vo100":(base?.payKey||(isCommercialType(ptype)?"commercial5":"standard")),customPay:base?.customPay||[],
   disc:"",discOk:false,usePaypal:false,usePaynow:false,
   sig:{clientName:"",date:todayStr(),agreed:false,directorDate:todayStr(),idDate:todayStr(),
     summaryCanvas:"",tcCanvas:"",warrantyCanvas:"",allItemsCanvas:"",
@@ -978,7 +993,7 @@ const ItemRow=React.memo(function ItemRow({
             {isCustom&&customObj&&customObj.approved&&!isLocked&&USER_ROLE>=ROLES.senior&&onUnlockCustom&&<span onClick={()=>onUnlockCustom(customObj)} title="Senior/Director PIN unlock" style={{fontSize:10,color:C.stone,cursor:"pointer",marginRight:4}}>🔓</span>}
             {isRemoved&&<span style={{background:"#8B3A3A22",color:"#8B3A3A",border:"1px solid #8B3A3A44",borderRadius:2,padding:"0 5px",fontSize:9,fontWeight:700,marginLeft:4}}>REMOVED</span>}
             {!isCustom&&!isLocked&&onDescChange&&<span onClick={()=>setRevealDesc(v=>!v)} title="Edit description — needs senior/director approval to print" style={{fontSize:10,color:C.gold,cursor:"pointer",marginRight:4,opacity:0.75}}>✎</span>}
-            {isCustom?null:(revealDesc?(
+            {isCustom?item.desc:(revealDesc?(
               <input type="text" autoFocus value={descVal!==undefined&&descVal!==null?descVal:item.desc}
                 onChange={e=>onDescChange(e.target.value)} onBlur={()=>setRevealDesc(false)}
                 style={{width:"100%",border:`1px solid ${C.gold}`,borderRadius:2,padding:"2px 5px",fontSize:14,fontFamily:T.sans,background:C.cream,boxSizing:"border-box"}}/>
@@ -2693,7 +2708,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white,cursor:"pointer"}} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}>
                 <div style={{display:"flex",alignItems:"center",gap:7}}>
                   <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,1:!o[1]}))}/>
-                  <Toggle on={anyOn} small disabled={isLocked} onClick={()=>{if(isLocked)return;const ns={};designItemsCfg(projectType).forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
+                  <Toggle on={anyOn} small onClick={()=>{const ns={};designItemsCfg(projectType).forEach(i=>{ns[i.id]=!anyOn;});setDesignOn(ns);}}/>
                   <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>01</span>
                   <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>Interior Design & Consultation</span>
                   <span style={{fontSize:10,color:C.stone}}>— PSF-based fees</span>
@@ -2709,6 +2724,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                       style={{border:`1px solid ${C.gold}`,borderRadius:3,padding:"5px 8px",fontSize:12,fontFamily:T.sans,background:C.cream}}>
                       {Object.values(PROJECT_TYPES).map(p=><option key={p.key} value={p.key}>{p.label}</option>)}
                     </select>
+                    {PT(projectType).note&&<span style={{fontSize:10,color:C.stone,fontStyle:"italic",fontFamily:T.sans}}>{PT(projectType).note}</span>}
                     <label style={{fontSize:11,fontWeight:600,color:C.stone,fontFamily:T.sans}}>Unit Size (sqft)</label>
                     <input type="text" inputMode="numeric" value={unitSqft||""} placeholder="e.g. 1000"
                       onChange={e=>{const v=parseInt(e.target.value.replace(/[^0-9]/g,""),10)||0;setUnitSqft(Math.max(0,v));}}
@@ -2840,7 +2856,7 @@ function QuoteBuilder({initData,onSave,onBack}){
               <div style={{padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",background:tOpen?C.cream:C.white}}>
                 <div style={{display:"flex",alignItems:"center",gap:7}}>
                   <CBtn open={tOpen} onClick={()=>setOpenTrades(o=>({...o,[trade.id]:!o[trade.id]}))}/>
-                  <Toggle on={allOn} onClick={()=>{if(!isLocked)toggleTM(trade);}} small disabled={isLocked}/>
+                  <Toggle on={allOn} onClick={()=>toggleTM(trade)} small/>
                   <span style={{background:C.ink,color:C.gold,borderRadius:3,padding:"2px 7px",fontSize:10,fontWeight:600,fontFamily:T.sans,letterSpacing:1}}>{trade.code}</span>
                   <span style={{fontFamily:T.serif,fontSize:17,fontWeight:400}}>{trade.name}</span>
                 </div>
@@ -2944,7 +2960,7 @@ function QuoteBuilder({initData,onSave,onBack}){
                         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 10px",background:isDropTarget?"#FFF8F0":C.cream,borderTop:`1px solid ${C.border}`,border:isDropTarget?`1px dashed ${C.gold}`:undefined}}>
                           <div style={{display:"flex",alignItems:"center",gap:6}}>
                             <CBtn open={zOpen} onClick={()=>setOpenZones(o=>({...o,[zK(trade.id,zone)]:!isZO(trade.id,zone)}))} size={18}/>
-                            <Toggle on={zoneOn(trade,zone)} onClick={e=>{e.stopPropagation();if(!isLocked)toggleZM(trade,zone);}} small disabled={isLocked}/>
+                            <Toggle on={zoneOn(trade,zone)} onClick={e=>{e.stopPropagation();toggleZM(trade,zone);}} small/>
                             {editingZone===zK(trade.id,zone)?(
                               <input autoFocus value={zoneNameBuf} onChange={e=>setZoneNameBuf(e.target.value)}
                                 onBlur={()=>{const v=zoneNameBuf.trim();setZoneNames(m=>({...m,[zK(trade.id,zone)]:v||zone}));setEditingZone(null);}}
